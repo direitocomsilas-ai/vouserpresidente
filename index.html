@@ -1476,9 +1476,12 @@ function applyImport(entries, reset) {
     const ci = mc.ci;
     if (side0 === 'x') { ign(e, 'usou mais de um lado no mesmo comentário'); continue; }
     const p = players[e.user] || (players[e.user] = newP());
-    const s = side0 || p.side;
-    if (!s) { ign(e, 'faltou o lado (🔵, 🔴 ou ⚪ sem lado)'); continue; }
+    // quem não coloca o lado fica "sem lado" (⚪); se depois escolher um lado pela primeira vez, a casa muda de cor
+    if (p.side === 'n' && p.autoN && side0 && side0 !== 'n') { p.casas.forEach(cx => { if (cities[cx].n > 0) { cities[cx].n--; cities[cx][side0]++; } }); p.side = side0; delete p.autoN; act(e, `escolheu o lado: ${sideEmo(side0)} ${sideName(side0)}`); }
+    let s = side0 || p.side;
+    if (!s) { s = 'n'; p.autoN = true; act(e, '⚪ sem lado (não escolheu)'); }
     if (p.side && p.side !== s) { ign(e, `já joga pela ${sideName(p.side)}`); continue; }
+    if (side0 === 'n') delete p.autoN;
     p.side = s; rep.users.add(e.user);
     if (!p.casas.includes(ci)) { p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); act(e, `🏠 casa em ${cities[ci].name} - ${cities[ci].uf}${cities[ci].f === e.user ? ' (fundador)' : ''}`); }
     else { rep.dup++; act(e, `já tinha casa em ${cities[ci].name}`); }
@@ -1992,7 +1995,7 @@ $('cLevels').onclick = () => openModal(`<h2>Níveis da casa</h2>
 
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <ul class="rules">
-    <li><b>🏠</b><span>Comente no post de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> o nome da sua cidade e o lado: "Macaé 🔵" ou "Macaé 🔴". O primeiro lado que você usar fica valendo. Prefere não escolher? Use "⚪ sem lado". Se o nome existir em mais de um estado, escreva a UF.</span></li>
+    <li><b>🏠</b><span>Quem não escolher o lado fica ⚪ sem lado (dá para escolher depois, uma vez). Comente no post de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> o nome da sua cidade e o lado: "Macaé 🔵" ou "Macaé 🔴". O primeiro lado que você usar fica valendo. Prefere não escolher? Use "⚪ sem lado". Se o nome existir em mais de um estado, escreva a UF.</span></li>
     <li><b>+5 💬</b><span>Cada comentário no post.</span></li>
     <li><b>+3 👥</b><span>Cada amigo que você marcar (vale uma vez por amigo).</span></li>
     <li><b>+30 📲</b><span>Story marcando <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> (a página confere e confirma).</span></li>
