@@ -696,14 +696,17 @@ let byCity = new Map(), kings = {}, votesCity = new Map(), votesNat = { b:new Ma
 const votesOf = h => (votesNat.b.get(h) || 0) + (votesNat.r.get(h) || 0);
 const voteSort = ci => (a, b) => (b[1] - a[1]) || (scoreOf(players[b[0]]) - scoreOf(players[a[0]])) || ((cities[ci] && cities[ci].f === b[0]) - (cities[ci] && cities[ci].f === a[0]));
 function officials(ci) {
-  const m = votesCity.get(ci); if (!m) return { pref:null, ver:[] };
-  const list = [...m.entries()].filter(([h]) => players[h] && players[h].casas.includes(ci)).sort(voteSort(ci));
-  return { pref:list[0] || null, ver:list.slice(1, 11) };
+  const m = votesCity.get(ci), c = cities[ci];
+  const list = m ? [...m.entries()].filter(([h]) => players[h] && players[h].casas.includes(ci)).sort(voteSort(ci)) : [];
+  // sem nenhuma aliança aceita ainda, o fundador da cidade é o prefeito
+  if (!list.length) return { pref:c && c.f && players[c.f] && players[c.f].casas.includes(ci) ? [c.f, 0] : null, ver:[] };
+  return { pref:list[0], ver:list.slice(1, 11) };
 }
 function rolesOf(h) {
   const out = [];
   ['b', 'r'].forEach(sd => { if (presidents[sd] && presidents[sd][0] === h) out.push(`🏛️ Presidente ${sideEmo(sd)}`); });
-  votesCity.forEach((m, ci) => { if (!m.has(h)) return; const o = officials(ci); if (o.pref && o.pref[0] === h) out.push(`Prefeito(a) de ${cities[ci].name} - ${cities[ci].uf}`); else if (o.ver.some(v => v[0] === h)) out.push(`Vereador(a) de ${cities[ci].name} - ${cities[ci].uf}`); });
+  const cis = new Set([...votesCity.keys()].filter(ci => votesCity.get(ci).has(h))); (players[h] ? players[h].casas : []).forEach(ci => cis.add(ci));
+  cis.forEach(ci => { const o = officials(ci); if (o.pref && o.pref[0] === h) out.push(`Prefeito(a) de ${cities[ci].name} - ${cities[ci].uf}`); else if (o.ver.some(v => v[0] === h)) out.push(`Vereador(a) de ${cities[ci].name} - ${cities[ci].uf}`); });
   return out;
 }
 function cityHouses(c) {
@@ -1056,7 +1059,7 @@ function renderPanel() {
       <div class="tile"><span>Honestidade</span><b>${inf.hon}/100</b><div class="meter"><i style="width:${inf.hon}%"></i></div></div>
     </div>
     <div class="sec grid">
-      <div><h3>Prefeito</h3>${off.pref ? `<button class="pp go" data-h="${html(off.pref[0])}"><span class="dot ${players[off.pref[0]].side}"></span>${html(showH(off.pref[0]))} · ${off.pref[1]} voto(s)</button>` : '<span class="note">Vago. Quem tiver mais alianças aceitas aqui vira prefeito.</span>'}</div>
+      <div><h3>Prefeito</h3>${off.pref ? `<button class="pp go" data-h="${html(off.pref[0])}"><span class="dot ${players[off.pref[0]].side}"></span>${html(showH(off.pref[0]))} · ${off.pref[1] ? off.pref[1] + ' voto(s)' : 'fundador'}</button>` : '<span class="note">Vago. O fundador vira prefeito; depois, quem tiver mais alianças aceitas assume.</span>'}</div>
       <div><h3>Câmara · 10 vagas</h3><div class="camara">${Array.from({ length:10 }, (_, k) => off.ver[k] ? `<button class="dot ${players[off.ver[k][0]].side} seat" data-h="${html(off.ver[k][0])}" title="${html(showH(off.ver[k][0]))} · ${off.ver[k][1]} voto(s)" aria-label="Vereador ${html(showH(off.ver[k][0]))}"></button>` : '<span class="dot empty" title="Vaga"></span>').join('')}</div><span class="note">${off.ver.length}/10 eleitos</span></div>
     </div>
     ${playersHere(sel)}
