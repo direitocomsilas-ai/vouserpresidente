@@ -734,7 +734,14 @@ function rebuildAll() {
     const m = votesCity.get(ci); m.set(from, (m.get(from) || 0) + 1);
     votesNat[p.side].set(from, (votesNat[p.side].get(from) || 0) + 1);
   });
-  ['b', 'r'].forEach(sd => { presidents[sd] = [...votesNat[sd].entries()].sort(voteSort(-1))[0] || null; });
+  ['b', 'r'].forEach(sd => {
+    presidents[sd] = [...votesNat[sd].entries()].sort(voteSort(-1))[0] || null;
+    // sem votos ainda: lidera quem tem mais pontos e casas daquele lado (empate: quem chegou primeiro)
+    if (!presidents[sd]) {
+      const c = Object.entries(players).filter(([, p]) => p.side === sd && p.casas.length).sort((a, b) => scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length || (a[1].since || 0) - (b[1].since || 0))[0];
+      presidents[sd] = c ? [c[0], 0] : null;
+    }
+  });
   for (const [h, p] of Object.entries(players)) {
     if (!p.side) continue;
     const sc = scoreOf(p), lvl = levelOf(p);
@@ -1019,7 +1026,51 @@ function renderHUD() {
   $('count').textContent = `${fmt(B + R)} casas em ${fmt(active.length)} cidades`;
   $('natB').textContent = `🔵 ${Math.round(pb)}%`; $('natR').textContent = `${100 - Math.round(pb)}% 🔴`;
   $('bb').style.width = pb + '%'; $('br').style.width = (100 - pb) + '%';
-  $('pres').innerHTML = ['b', 'r'].map(sd => `<span class="${sd}">🏛️ ${sideEmo(sd)} ${presidents[sd] ? html(showH(presidents[sd][0])) + ` · ${presidents[sd][1]} voto(s)` : 'presidência vaga'}</span>`).join('');
+  $('pres').innerHTML = ['b', 'r'].map(sd => `<span class="${sd}">🏛️ ${sideEmo(sd)} ${presidents[sd] ? html(showH(presidents[sd][0])) + (presidents[sd][1] ? ` · ${presidents[sd][1]} voto(s)` : '') : 'presidência vaga'}</span>`).join('');
+  if (active.length && /vazio/.test($('ticker').textContent)) log('Comente no post do @vouserpresidente: CIDADE + @ + 🔵 direita ou 🔴 esquerda');
+  renderBoard(B, R);
+}
+// ---------- Quadro da tela inicial: lados no Brasil, presidente até agora e top 3 cidades ----------
+const board = document.createElement('aside');
+board.id = 'board'; board.className = 'card';
+document.getElementById('app').appendChild(board);
+const bcss = document.createElement('style');
+bcss.textContent = `#board{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:200px;z-index:5;width:230px;padding:10px 12px;font-size:13px}
+#board h4{margin:0 0 4px;font-size:10.5px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+#board .sides{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+#board .sides div{border:2px solid var(--ink);border-radius:12px;padding:4px 8px;font-weight:900;color:var(--on)}
+#board .sides .b{background:var(--blue)} #board .sides .r{background:var(--red)}
+#board .sides b{display:block;font-family:var(--display);font-weight:400;font-size:22px;line-height:1}
+#board .sides small{font-size:10.5px;font-weight:800;opacity:.9}
+#board .pres{display:flex;align-items:center;gap:6px;width:100%;text-align:left;border:2px solid var(--ink);border-radius:12px;background:var(--sun);padding:5px 8px;font:900 13px var(--body);cursor:pointer;margin-bottom:8px}
+#board ol{margin:0;padding:0;list-style:none;display:grid;gap:4px}
+#board ol button{width:100%;display:flex;align-items:center;gap:6px;text-align:left;border:0;background:var(--line);border-radius:10px;padding:4px 8px;font:800 12.5px var(--body);cursor:pointer}
+#board ol button:hover,#board .pres:hover{filter:brightness(.95)}
+#board ol .n{font-family:var(--display);font-weight:400;font-size:15px;min-width:16px}
+#board ol .c{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#board ol small{color:var(--muted);font-weight:900}
+#board .x{display:none}
+@media (max-width:760px){#board{top:calc(172px + env(safe-area-inset-top,0px));width:178px;font-size:12px;padding:7px 9px}
+ #board.min .hide-m{display:none} #board .sides b{font-size:18px} #board ol button{font-size:12px}}
+#panel:not([hidden]) ~ #board .hide-p{display:none}`;
+document.head.appendChild(bcss);
+function renderBoard(B, R) {
+  const people = sd => Object.values(players).filter(p => p.side === sd && p.casas.length).length;
+  const nb = people('b'), nr = people('r');
+  const lead = B === R ? null : B > R ? 'b' : 'r';
+  const pr = lead && presidents[lead] ? presidents[lead] : (presidents.b || presidents.r);
+  const top = active.map(ci => cities[ci]).sort((a, b) => (b.b + b.r) - (a.b + a.r) || (b.cap - a.cap) || a.name.localeCompare(b.name)).slice(0, 3);
+  board.innerHTML = `
+    <h4>Brasil inteiro</h4>
+    <div class="sides"><div class="b"><small>🔵 Direita</small><b>${fmt(nb)}</b><small>${nb === 1 ? 'pessoa' : 'pessoas'}</small></div><div class="r"><small>🔴 Esquerda</small><b>${fmt(nr)}</b><small>${nr === 1 ? 'pessoa' : 'pessoas'}</small></div></div>
+    <div class="hide-p">
+    <h4>Presidente até agora</h4>
+    ${pr ? `<button class="pres" data-h="${html(pr[0])}">🏛️ ${sideEmo(players[pr[0]].side)} ${html(showH(pr[0]))}</button>` : '<p class="note" style="margin:0 0 8px">Ninguém ainda: comente e seja o primeiro!</p>'}
+    <h4>Top cidades</h4>
+    ${top.length ? `<ol>${top.map((c, i) => `<li><button data-ci="${c.i}"><span class="n">${i + 1}</span><span class="c">${html(c.name)} - ${c.uf}</span><small>${c.b > c.r ? '🔵' : c.r > c.b ? '🔴' : '⚖️'} ${fmt(c.b + c.r)}</small></button></li>`).join('')}</ol>` : '<p class="note" style="margin:0">Nenhuma cidade fundada ainda.</p>'}
+    </div>`;
+  board.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => select(+b.dataset.ci));
+  board.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
 }
 function refresh() { rebuildAll(); renderHUD(); }
 
