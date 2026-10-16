@@ -309,14 +309,15 @@ function info(ci) {
 // ---------- Estado do jogo (embutido na página publicada) ----------
 const players = {};
 const credited = new Set();
-const newP = () => ({ side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], claims:[], tagged:[], since:Date.now() });
+const newP = () => ({ at:{}, side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], claims:[], tagged:[], since:Date.now() });
 const fixP = p => { const d = newP(); for (const k in d) if (p[k] === undefined) p[k] = d[k]; if (Array.isArray(p.shared)) p.shared = p.shared.length; return p; };
 const showH = h => '@' + h;
 const igUrl = h => 'https://www.instagram.com/' + encodeURIComponent(h) + '/';
 const igLink = (h, label) => `<a class="ig" href="${igUrl(h)}" target="_blank" rel="noopener"><span class="igi" aria-hidden="true"></span>${label || 'abrir @' + h + ' no Instagram'}</a>`;
 let STATE_V = 0, ADMIN = false, dirty = false, ART = null;
 const DRAFT = 'vsp-rascunho-v1';
-function snapshot() { return { v:STATE_V, a:cities.filter(c => c.b + c.r).map(c => [c.i, c.b, c.r, c.f || null]), p:players, k:[...credited] }; }
+let POST = '';
+function snapshot() { return { v:STATE_V, a:cities.filter(c => c.b + c.r).map(c => [c.i, c.b, c.r, c.f || null]), p:players, k:[...credited], post:POST }; }
 function applyState(d) {
   cities.forEach(c => { c.b = 0; c.r = 0; c.f = null; c.inf = null; });
   for (const k in players) delete players[k];
@@ -324,6 +325,7 @@ function applyState(d) {
   if (!d) return;
   (d.a || []).forEach(([i, b, r, f]) => { if (cities[i]) { cities[i].b = b; cities[i].r = r; cities[i].f = f; } });
   Object.assign(players, d.p || {}); Object.values(players).forEach(fixP); (d.k || []).forEach(k => credited.add(k));
+  POST = d.post || '';
 }
 try { const d = JSON.parse(document.getElementById('state').textContent || '{}'); STATE_V = d.v || 0; applyState(d); } catch (e) {}
 // rascunho do dono: alterações ainda não publicadas
@@ -698,9 +700,14 @@ const voteSort = ci => (a, b) => (b[1] - a[1]) || (scoreOf(players[b[0]]) - scor
 function officials(ci) {
   const m = votesCity.get(ci), c = cities[ci];
   const list = m ? [...m.entries()].filter(([h]) => players[h] && players[h].casas.includes(ci)).sort(voteSort(ci)) : [];
-  // sem nenhuma aliança aceita ainda, o fundador da cidade é o prefeito
-  if (!list.length) return { pref:c && c.f && players[c.f] && players[c.f].casas.includes(ci) ? [c.f, 0] : null, ver:[] };
-  return { pref:list[0], ver:list.slice(1, 11) };
+  // prefeito: o fundador, até alguém juntar mais alianças aceitas na cidade
+  const fund = c && c.f && players[c.f] && players[c.f].casas.includes(ci) ? c.f : null;
+  const fv = fund && m ? (m.get(fund) || 0) : 0;
+  const pref = list.length && list[0][1] > fv ? list[0] : fund ? [fund, fv] : (list[0] || null);
+  // câmara: os 10 primeiros moradores que chegaram depois do prefeito
+  const arr = h => { const p = players[h]; return (p.at && p.at[ci]) || p.since || 0; };
+  const ver = Object.keys(players).filter(h => players[h].casas.includes(ci) && (!pref || h !== pref[0])).sort((a, b) => arr(a) - arr(b)).slice(0, 10).map(h => [h, m ? (m.get(h) || 0) : 0]);
+  return { pref, ver };
 }
 function rolesOf(h) {
   const out = [];
@@ -1110,12 +1117,14 @@ function renderPanel() {
       <div class="tile"><span>Honestidade</span><b>${inf.hon}/100</b><div class="meter"><i style="width:${inf.hon}%"></i></div></div>
     </div>
     <div class="sec grid">
-      <div><h3>Prefeito</h3>${off.pref ? `<button class="pp go" data-h="${html(off.pref[0])}"><span class="dot ${players[off.pref[0]].side}"></span>${html(showH(off.pref[0]))} · ${off.pref[1] ? off.pref[1] + ' voto(s)' : 'fundador'}</button>` : '<span class="note">Vago. O fundador vira prefeito; depois, quem tiver mais alianças aceitas assume.</span>'}</div>
-      <div><h3>Câmara · 10 vagas</h3><div class="camara">${Array.from({ length:10 }, (_, k) => off.ver[k] ? `<button class="dot ${players[off.ver[k][0]].side} seat" data-h="${html(off.ver[k][0])}" title="${html(showH(off.ver[k][0]))} · ${off.ver[k][1]} voto(s)" aria-label="Vereador ${html(showH(off.ver[k][0]))}"></button>` : '<span class="dot empty" title="Vaga"></span>').join('')}</div><span class="note">${off.ver.length}/10 eleitos</span></div>
+      <div><h3>Prefeito</h3>${off.pref ? `<button class="pp go" data-h="${html(off.pref[0])}"><span class="dot ${players[off.pref[0]].side}"></span>${html(showH(off.pref[0]))} · ${off.pref[0] === cities[sel].f ? 'fundador' : off.pref[1] + ' voto(s)'}</button>` : '<span class="note">Vago. O fundador vira prefeito; depois, quem tiver mais alianças aceitas assume.</span>'}</div>
+      <div><h3>Câmara · 10 vagas</h3><div class="camara">${Array.from({ length:10 }, (_, k) => off.ver[k] ? `<button class="dot ${players[off.ver[k][0]].side} seat" data-h="${html(off.ver[k][0])}" title="${html(showH(off.ver[k][0]))} · ${k + 1}º a chegar" aria-label="Vereador ${html(showH(off.ver[k][0]))}"></button>` : '<span class="dot empty" title="Vaga"></span>').join('')}</div><span class="note">${off.ver.length}/10 · os 10 primeiros moradores</span></div>
     </div>
     ${playersHere(sel)}
+    <div class="mrow"><button class="chip y" style="font-size:14px" id="pJoin">quero morar aqui</button><button class="chip" style="font-size:14px" id="pAlly">convidar aliado</button></div>
     <p class="note">Para ganhar uma casa aqui, comente no post de @vouserpresidente "${html(c.name)}${NAME_IDX.get(c.k).length > 1 ? ' - ' + c.uf : ''} 🔵" ou "🔴" no post oficial. 1 casa por @ em cada cidade. PIB, aprovação e honestidade são de exemplo.</p>`;
   $('px').onclick = closePanel;
+  { const cn = ctag(sel); $('pJoin').onclick = () => openJoin('casa', { city:cn }); $('pAlly').onclick = () => openJoin('aliado', { city:cn }); }
   el.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
 }
 function liveUpdate(ci) {
@@ -1182,7 +1191,7 @@ function openProfile(h) {
       </div>
       ${roles.length ? `<div class="sec"><h3>Cargos</h3><div class="ppl">${roles.map(x => `<span class="pp" style="background:var(--sun);border:2px solid var(--ink)">${html(x)}</span>`).join('')}</div></div>` : ''}
       ${p.reqIn.length ? `<div class="sec"><h3>Convites de aliança esperando ${html(showH(h))} (${p.reqIn.length})</h3><div class="reqs">
-        ${p.reqIn.map((r, i) => `<div class="req"><span><b>${html(showH(r.from))}</b> convidou em ${cityTag(r.ci)}</span>${ADMIN ? `<span class="ra"><button class="chip y" data-acc="${i}">aceitar</button><button class="chip" data-dec="${i}">recusar</button></span>` : ''}</div>`).join('')}</div>
+        ${p.reqIn.map((r, i) => `<div class="req"><span><b>${html(showH(r.from))}</b> convidou em ${cityTag(r.ci)}</span>${ADMIN ? `<span class="ra"><button class="chip y" data-acc="${i}">aceitar</button><button class="chip" data-dec="${i}">recusar</button></span>` : `<span class="ra"><button class="chip y" data-join-acc="${html(r.from)}">aceitar no Instagram</button></span>`}</div>`).join('')}</div>
         <p class="note">Para aceitar, ${html(showH(h))} comenta no post: "aceito ${p.reqIn[0] ? html(showH(p.reqIn[0].from)) : '@aliado'}". Cada aliança aceita vale 1 voto e +1 ponto para quem convidou.</p></div>` : ''}
       <div class="sec"><h3>Casas</h3><div class="ppl">${p.casas.length ? p.casas.map(ci => `<button class="pp go" data-ci="${ci}">🏠 ${cityTag(ci)}${cities[ci].f === h ? ' 🚩' : ''}</button>`).join('') : '<span class="note">Ainda sem casa.</span>'}</div></div>
       <div class="sec"><h3>Aliados</h3><div class="ppl">${p.allies.length ? p.allies.map(a => `<button class="pp go" data-h="${html(a)}">${players[a] ? lvImg(levelOf(players[a])) : ''}${html(showH(a))}</button>`).join('') : '<span class="note">Nenhum aliado ainda.</span>'}</div></div>
@@ -1194,6 +1203,7 @@ function openProfile(h) {
         <button class="chip y" style="font-size:14px" data-share="1">compartilhou +3${p.shared ? ` (${p.shared}×)` : ''}</button></div></div>` : ''}
     </div>`);
   const mc = $('mcard');
+  mc.querySelectorAll('[data-join-acc]').forEach(b => b.onclick = () => openJoin('aceitar', { from:b.dataset.joinAcc }));
   mc.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => { answerInvite(h, +b.dataset.acc, true); openProfile(h); });
   mc.querySelectorAll('[data-dec]').forEach(b => b.onclick = () => { answerInvite(h, +b.dataset.dec, false); openProfile(h); });
   mc.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); const ci = +b.dataset.ci; select(ci, h); picked = { ci, h }; popHandle(ci, h, 3); });
@@ -1301,6 +1311,7 @@ function parseComments(text) {
   }
   return { entries:out, orphan };
 }
+let arrivalSeq = 0;
 function applyImport(entries, reset) {
   if (reset) {
     cities.forEach(c => { c.b = 0; c.r = 0; c.inf = null; c.f = null; });
@@ -1326,7 +1337,7 @@ function applyImport(entries, reset) {
       const q = players[e.user] || (players[e.user] = newP());
       if (wantsF && !q.followed && !q.claims.some(c => c.kind === 'seguir')) { q.claims.push({ kind:'seguir', t:Date.now() }); rep.claims.push([e.user, 'seguir']); }
       if (wantsS && !q.claims.some(c => c.kind === 'compartilhar')) { q.claims.push({ kind:'compartilhar', t:Date.now() }); rep.claims.push([e.user, 'compartilhar']); }
-      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); rep.tags.push([e.user, m]); } });
+      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); q.pts += 1; rep.tags.push([e.user, m]); } });
     }
     if (!mc && (wantsF || wantsS || mentions.length)) continue;
     if (!mc) { if (side0) rep.ign.push([e.user, raw, 'cidade não reconhecida']); else rep.chatter++; continue; }
@@ -1338,7 +1349,7 @@ function applyImport(entries, reset) {
     if (!s) { rep.ign.push([e.user, raw, 'faltou o lado (🔵 ou 🔴)']); continue; }
     if (p.side && p.side !== s) { rep.ign.push([e.user, raw, `já joga pela ${sideName(p.side)}`]); continue; }
     p.side = s; rep.users.add(e.user);
-    if (!p.casas.includes(ci)) { p.casas.push(ci); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); }
+    if (!p.casas.includes(ci)) { p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); }
     else rep.dup++;
     mentions.forEach(m => pend.push([e.user, m, ci, raw]));
   }
@@ -1490,6 +1501,7 @@ function openLogin() {
 }
 (() => {
   const row = $('adminRow');
+  const pl = document.createElement('button'); pl.className = 'chip'; pl.style.cssText = 'font-size:15px;padding:5px 14px'; pl.textContent = 'link do post'; pl.onclick = openPostLink; row.insertBefore(pl, row.querySelector('#pubBtn'));
   const cb = document.createElement('button'); cb.className = 'chip'; cb.id = 'claimsBtn'; cb.style.cssText = 'font-size:15px;padding:5px 14px'; cb.onclick = openClaims; row.insertBefore(cb, row.querySelector('#pubBtn'));
   const out = document.createElement('button'); out.className = 'chip'; out.id = 'logoutBtn'; out.hidden = true;
   out.style.cssText = 'font-size:15px;padding:5px 14px'; out.textContent = 'sair';
@@ -1542,7 +1554,7 @@ function runImport() {
     ${ign.length ? `<div class="tw"><table><thead><tr><th>Quem</th><th>Comentário</th><th>Por que não contou</th></tr></thead><tbody>
       ${ign.map(([u, c, w]) => `<tr><td>@${html(u)}</td><td>${html(c.slice(0, 60))}</td><td class="why">${html(w)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <p style="margin:10px 0 0">${rep.dup ? `${rep.dup} comentário(s) repetiram cidade onde a pessoa já tinha casa. ` : ''}${rep.chatter ? `${rep.chatter} comentário(s) sem cidade foram ignorados. ` : ''}${orphan ? `${orphan} linha(s) sem autor identificado.` : ''}</p>
-    ${rep.tags.length ? `<div class="sec"><h3>Quem marcou amigo (${rep.tags.length})</h3><div class="ppl">${rep.tags.slice(0, 60).map(([u, m]) => `<span class="pp">@${html(u)} → @${html(m)}</span>`).join('')}</div></div>` : ''}
+    ${rep.tags.length ? `<div class="sec"><h3>Quem marcou amigo · +1 ponto por amigo (${rep.tags.length})</h3><div class="ppl">${rep.tags.slice(0, 60).map(([u, m]) => `<span class="pp">@${html(u)} → @${html(m)}</span>`).join('')}</div></div>` : ''}
     ${claimsHTML()}
     <div class="mrow"><button class="chip" id="seeMap">ver no mapa antes</button><span class="grow"></span><button class="chip y" id="pubNow">publicar para todos</button></div>
     <p class="note">Por enquanto só você está vendo. Ao publicar, todo mundo que abrir o link vê o mapa novo.</p>`;
@@ -1581,22 +1593,69 @@ function openClaims() {
     <div class="mrow"><span class="grow"></span><button class="chip y" id="claimsPub">publicar alterações</button></div>`);
   wireClaims(); $('claimsPub').onclick = () => { closeModal(); publishAll(); };
 }
-// ---------- Botão "seguir": leva ao Instagram e explica como ganhar os pontos ----------
-$('cIg').addEventListener('click', e => {
-  e.preventDefault();
-  openModal(`<h2>Siga e ganhe +3 pontos</h2>
-    <ol class="rules" style="list-style:none">
-      <li><b>1</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> no Instagram.</span></li>
-      <li><b>2</b><span>No post do jogo, comente <b style="min-width:0">segui ✅</b> + sua cidade + 🔵 direita ou 🔴 esquerda e marque um amigo.</span></li>
-      <li><b>3</b><span>Quando a página confirmar, os 3 pontos entram no seu perfil.</span></li>
-    </ol>
-    <p class="note">Compartilhou o jogo com alguém? Comente "compartilhei" no post e ganhe mais 3 pontos depois da confirmação.</p>
-    <div class="mrow"><button class="chip" id="shareBtn">compartilhar o jogo</button><span class="grow"></span><a class="chip y" href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">abrir o Instagram</a></div>`);
-  $('shareBtn').onclick = async () => {
+// ---------- Participar (qualquer pessoa, sem login): gera o comentário pronto para colar no post ----------
+const POSTURL = () => POST || 'https://www.instagram.com/vouserpresidente/';
+function copyGo(text) {
+  try { navigator.clipboard.writeText(text); } catch (x) {}
+  window.open(POSTURL(), '_blank', 'noopener');
+  toast('Comentário copiado! Cole no post 📋');
+}
+const cleanH = v => (v || '').trim().replace(/^@+/, '').toLowerCase();
+function cityOf(v) { const m = v && matchCity(v); return m && !m.amb ? m.ci : null; }
+const ctag = ci => `${cities[ci].name} - ${cities[ci].uf}`;
+let joinSide = 'b';
+function openJoin(tab = 'casa', pre = {}) {
+  const T = { casa:'🏠 Minha casa', aliado:'🤝 Convidar aliado', aceitar:'✅ Aceitar convite', seguir:'⭐ Seguir e compartilhar' };
+  const sideBtns = `<div class="mrow" style="margin-top:6px"><button class="side b" data-sd="b" aria-pressed="${joinSide === 'b'}">🔵 Direita</button><button class="side r" data-sd="r" aria-pressed="${joinSide === 'r'}">🔴 Esquerda</button></div>`;
+  const inp = (id, ph, v = '') => `<input id="${id}" value="${html(v)}" placeholder="${ph}" style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 15px var(--body);margin-top:8px">`;
+  const body = {
+    casa:`<p>Ganhe uma casa na sua cidade. Se for o primeiro a comentar, você vira o <b>fundador e prefeito</b>; os 10 seguintes formam a <b>Câmara de Vereadores</b>.</p>${inp('jCity', 'Sua cidade (ex.: Macaé - RJ)', pre.city || '')}${sideBtns}`,
+    aliado:`<p>Cada amigo que você marcar no post vale <b>+1 ponto</b>. Se ele morar na sua cidade e aceitar, vocês viram aliados: <b>+1 voto e +1 ponto</b> a mais.</p>${inp('jCity', 'Sua cidade', pre.city || '')}${inp('jFriend', '@ do amigo')}${sideBtns}<p class="note">Amigo ainda não joga? Marque assim mesmo: ele aparece na lista e pode entrar comentando a cidade dele.</p>`,
+    aceitar:`<p>Alguém te convidou para ser aliado? Aceite comentando no post.</p>${inp('jFrom', '@ de quem te convidou', pre.from || '')}`,
+    seguir:`<ol class="rules" style="list-style:none"><li><b>1</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a>.</span></li><li><b>2</b><span>Comente <b style="min-width:0">segui ✅</b> no post. Compartilhou o jogo? Comente <b style="min-width:0">compartilhei</b>.</span></li><li><b>3</b><span>Quando a página confirmar, entram <b style="min-width:0">+3 pontos</b> para cada um.</span></li></ol><div class="mrow"><button class="chip" id="shareBtn">compartilhar o jogo</button></div>`
+  };
+  openModal(`<h2>Participar</h2>
+    <div class="mrow" style="margin:0 0 6px">${Object.entries(T).map(([k, l]) => `<button class="chip ${k === tab ? 'y' : ''}" style="font-size:14px;padding:5px 12px" data-tab="${k}">${l}</button>`).join('')}</div>
+    ${body[tab]}
+    <div class="sec"><h3>Seu comentário</h3><div id="jPrev" class="req" style="font-weight:900;font-size:15px"></div><p class="note" id="jWarn"></p></div>
+    <div class="mrow"><span class="grow"></span><button class="chip y" id="jGo">copiar e comentar no post</button></div>
+    <p class="note">Só a página confirma os pontos: ela confere no Instagram quem realmente comentou, seguiu ou compartilhou.</p>`);
+  const mc = $('mcard'), val = id => (mc.querySelector('#' + id) || {}).value || '';
+  const build = () => {
+    let txt = '', warn = '';
+    const emo = joinSide === 'b' ? '🔵 direita' : '🔴 esquerda';
+    if (tab === 'casa' || tab === 'aliado') {
+      const raw = val('jCity'), ci = cityOf(raw), m = raw && matchCity(raw);
+      if (raw && !ci) warn = m && m.amb ? 'Tem mais de uma cidade com esse nome: escreva também o estado, ex.: "Bom Jesus - PI".' : 'Cidade não encontrada. Confira o nome.';
+      const city = ci !== null ? ctag(ci) : (raw || 'Sua cidade');
+      txt = `${city} ${emo}`;
+      if (tab === 'aliado') { const f = cleanH(val('jFriend')); txt += ` @${f || 'amigo'}`; if (f && players[f] && ci !== null && !players[f].casas.includes(ci)) warn = `@${f} ainda não mora em ${ctag(ci)}: a aliança só vale quando ele tiver casa lá.`; }
+    } else if (tab === 'aceitar') { const f = cleanH(val('jFrom')); txt = `aceito @${f || 'quem_te_convidou'}`; }
+    else txt = 'segui ✅';
+    mc.querySelector('#jPrev').textContent = txt; mc.querySelector('#jWarn').textContent = warn;
+    return txt;
+  };
+  mc.querySelectorAll('input').forEach(i => i.oninput = build);
+  mc.querySelectorAll('[data-sd]').forEach(b => b.onclick = () => { joinSide = b.dataset.sd; mc.querySelectorAll('[data-sd]').forEach(x => x.setAttribute('aria-pressed', x.dataset.sd === joinSide)); build(); });
+  mc.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => openJoin(b.dataset.tab, { city:val('jCity'), from:val('jFrom') }));
+  mc.querySelector('#jGo').onclick = () => copyGo(build());
+  const sb = mc.querySelector('#shareBtn');
+  if (sb) sb.onclick = async () => {
     const url = location.origin + location.pathname, text = 'Vem construir o Brasil nos comentários! Escolha seu lado e ganhe sua casa no mapa 🇧🇷';
     try { if (navigator.share) await navigator.share({ title:'Vou Ser Presidente', text, url }); else { await navigator.clipboard.writeText(text + ' ' + url); toast('Link copiado!'); } } catch (x) {}
   };
-});
+  build();
+}
+$('cIg').addEventListener('click', e => { e.preventDefault(); openJoin('seguir'); });
+{ const j = document.createElement('button'); j.className = 'chip y'; j.id = 'cJoin'; j.textContent = 'participar'; j.onclick = () => openJoin('casa'); $('cRank').parentNode.insertBefore(j, $('cIg')); $('cRank').classList.remove('y'); }
+// link do post atual (o dono define)
+function openPostLink() {
+  if (!ADMIN) return;
+  openModal(`<h2>Post atual do jogo</h2><p>Cole o link do post do Instagram onde as pessoas devem comentar. Os botões "copiar e comentar" do site vão abrir esse post.</p>
+    <input id="postIn" value="${html(POST)}" placeholder="https://www.instagram.com/p/..." style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 15px var(--body)">
+    <div class="mrow"><span class="grow"></span><button class="chip y" id="postSave">salvar e publicar</button></div>`);
+  $('postSave').onclick = () => { const v = $('postIn').value.trim(); if (v && !/^https:\/\/(www\.)?instagram\.com\//.test(v)) { toast('Use um link do instagram.com'); return; } POST = v; save(); closeModal(); publishAll(); };
+}
 
 function openRanking() {
   const rows = Object.entries(players).filter(([, p]) => p.casas.length).sort((a, b) => scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length).slice(0, 30);
@@ -1622,7 +1681,9 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <ul class="rules">
     <li><b>Lado</b><span>O primeiro lado que você usar (🔵 Direita ou 🔴 Esquerda) fica valendo para sempre.</span></li>
     <li><b>+1 🏠</b><span>Comente o nome da sua cidade e o lado no post oficial de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a>, ex.: "Sobral 🔵". Se o nome existir em mais de um estado, escreva a UF: "Bom Jesus - PI 🔵". Uma casa por @ em cada cidade.</span></li>
-    <li><b>+1 ⭐</b><span>Marque no comentário um @ que já tem casa na mesma cidade. Ele recebe um convite de aliança e aceita comentando "aceito @você" (até 3 por cidade).</span></li>
+    <li><b>+1 ⭐</b><span>Cada amigo que você marcar no post (vale uma vez por amigo).</span></li>
+    <li><b>+1 🗳️</b><span>Marque um @ que já tem casa na sua cidade: ele aceita comentando "aceito @você" e vocês viram aliados (+1 voto e +1 ponto, até 3 por cidade).</span></li>
+    <li><b>🏛️</b><span>O 1º a comentar a cidade é o fundador e prefeito; os 10 seguintes formam a Câmara de Vereadores.</span></li>
     <li><b>Perfil</b><span>Pesquise seu @ na barra do topo para ver seu perfil: nível, casas, aliados, votos, cargos e convites.</span></li>
     <li><b>+3 ⭐</b><span>Compartilhe o jogo e comente "compartilhei" no post (confirmado pela página).</span></li>
     <li><b>+3 ⭐</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> e comente "segui ✅" no post (bônus único, confirmado pela página).</span></li>
