@@ -1255,10 +1255,16 @@ function openProfile(h) {
       ${p.claims.length ? `<div class="sec"><h3>Esperando confirmação da página</h3><div class="ppl">${p.claims.map(c => `<span class="pp">⏳ ${c.kind === 'seguir' ? 'disse que seguiu' : 'story · +30'}</span>`).join('')}</div></div>` : ''}
       ${ADMIN ? `<div class="sec"><h3>Bônus (só você vê)</h3><div class="ppl">
         <button class="chip ${p.followed ? '' : 'y'}" style="font-size:14px" data-follow="1" ${p.followed ? 'disabled' : ''}>${p.followed ? 'segue a página ✓' : 'segue a página'}</button>
-        <button class="chip y" style="font-size:14px" data-share="1">story +30${p.shared ? ` (${p.shared}×)` : ''}</button></div></div>` : ''}
+        <button class="chip y" style="font-size:14px" data-share="1">story +30${p.shared ? ` (${p.shared}×)` : ''}</button></div>
+        <div class="mob" style="margin-top:8px"><input id="adjN" type="number" step="1" placeholder="ex.: 5 ou -5"><button class="act" id="adjGo" style="background:var(--paper)">ajustar pontos</button></div>
+        <div class="mrow"><span class="grow"></span><button class="chip" id="delP" style="font-size:14px;background:#ffe1e1">remover jogador</button></div></div>` : ''}
     </div>`);
   const mc = $('mcard');
   $('supBtn').onclick = () => openSupport(h);
+  if (ADMIN) {
+    $('adjGo').onclick = () => { const n = Math.round(+$('adjN').value); if (!n) { toast('Digite um número, ex.: 5 ou -5'); return; } p.pts = Math.max(0, p.pts + n); log(`Ajuste: ${showH(h)} ${n > 0 ? '+' : ''}${n} pts`); refresh(); save(); openProfile(h); toast(`${n > 0 ? '+' : ''}${n} pontos`); };
+    $('delP').onclick = () => { if ($('delP').dataset.sure !== '1') { $('delP').dataset.sure = '1'; $('delP').textContent = 'toque de novo para confirmar'; return; } removePlayer(h); closeModal(); toast(`${showH(h)} removido`); };
+  }
   mc.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => { answerInvite(h, +b.dataset.acc, true); openProfile(h); });
   mc.querySelectorAll('[data-dec]').forEach(b => b.onclick = () => { answerInvite(h, +b.dataset.dec, false); openProfile(h); });
   mc.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); const ci = +b.dataset.ci; select(ci, h); picked = { ci, h }; popHandle(ci, h, 3); });
@@ -1376,17 +1382,22 @@ function applyImport(entries, reset) {
   const rep = { read:entries.length, casas:0, pts:0, dup:0, chatter:0, ign:[], users:new Set(), touched:new Map(), claims:[], tags:[], sups:[], cmt:0 };
   const pend = [], accepts = [];
   rep.acc = 0;
+  const act = (e, x) => (e.acts = e.acts || []).push(x);
+  const ign = (e, why) => { rep.ign.push([e.user, e.raw, why]); act(e, '✗ ' + why); };
+  const known = new Set(Object.keys(players));
   for (const e of entries) {
+    e.acts = [];
+    if (!known.has(e.user)) { known.add(e.user); act(e, '🆕 @ novo no jogo (confira)'); }
     const raw = e.raw, full = norm(raw), t = full.replace(/@[a-z0-9._]+/g, ' ');
     // +5 por comentário (cada comentário conta uma vez, mesmo colando de novo)
-    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); pc.pts += 5; rep.cmt++; rep.users.add(e.user); } }
+    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); pc.pts += 5; rep.cmt++; rep.users.add(e.user); act(e, '+5 comentário'); } else act(e, 'comentário já contado'); }
     if (/(^|[^a-z])(aceito|aceita|aceitei|aceitamos|aceito alianca|recuso|recusei)([^a-z]|$)/.test(full) && /@[a-z0-9._]{2,30}/.test(full)) {
       const ok = !/(^|[^a-z])(recuso|recusei)([^a-z]|$)/.test(full);
-      (full.match(/@[a-z0-9._]{2,30}/g) || []).forEach(m => accepts.push([e.user, m.slice(1), ok, raw, matchCity(raw)]));
+      (full.match(/@[a-z0-9._]{2,30}/g) || []).forEach(m => accepts.push([e.user, m.slice(1), ok, raw, matchCity(raw), e]));
       continue;
     }
     const sm = full.match(/(^|[^a-z])(apoio|apoiado|apoiando|apoiei|voto em|voto no|voto na|meu voto (e|eh|vai pra|vai para|pro|pra|para))\s*@([a-z0-9._]{2,30})/);
-    if (sm) { const k = /prefeit/.test(t) ? 'pref' : /governad/.test(t) ? 'gov' : 'pres', r = applySupport(e.user, sm[4], k); if (r === 'ok') rep.sups.push([e.user, sm[4], k]); else rep.ign.push([e.user, raw, r]); continue; }
+    if (sm) { const k = /prefeit/.test(t) ? 'pref' : /governad/.test(t) ? 'gov' : 'pres', r = applySupport(e.user, sm[4], k); if (r === 'ok') { rep.sups.push([e.user, sm[4], k]); act(e, `👍 +2 para @${sm[4]} (${KIND[k].toLowerCase()})`); } else ign(e, r); continue; }
     const mc = matchCity(raw), side0 = parseSide(raw, t);
     const mentions = [...new Set((full.match(/@[a-z0-9._]{2,30}/g) || []).map(x => x.slice(1)))].filter(x => x !== e.user && x !== 'vouserpresidente');
     // pedidos de bônus (o dono confirma depois) e amigos marcados
@@ -1394,37 +1405,37 @@ function applyImport(entries, reset) {
     const wantsS = /(^|[^a-z])(story|stories|storie|storys|stori|compartilhei|compartilhado|repostei|divulguei)([^a-z]|$)/.test(t);
     if (wantsF || wantsS || mentions.length) {
       const q = players[e.user] || (players[e.user] = newP());
-      if (wantsF && !q.followed && !q.claims.some(c => c.kind === 'seguir')) { q.claims.push({ kind:'seguir', t:Date.now() }); rep.claims.push([e.user, 'seguir']); }
-      if (wantsS && !q.claims.some(c => c.kind === 'story')) { q.claims.push({ kind:'story', t:Date.now() }); rep.claims.push([e.user, 'story']); }
-      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); q.pts += 3; rep.tags.push([e.user, m]); } });
+      if (wantsF && !q.followed && !q.claims.some(c => c.kind === 'seguir')) { q.claims.push({ kind:'seguir', t:Date.now() }); rep.claims.push([e.user, 'seguir']); act(e, '⏳ seguiu (você confirma)'); }
+      if (wantsS && !q.claims.some(c => c.kind === 'story')) { q.claims.push({ kind:'story', t:Date.now() }); rep.claims.push([e.user, 'story']); act(e, '⏳ story +30 (você confirma)'); }
+      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); q.pts += 3; rep.tags.push([e.user, m]); act(e, `+3 marcou @${m}`); } else act(e, `@${m} já marcado antes`); });
     }
     if (!mc && (wantsF || wantsS || mentions.length)) continue;
-    if (!mc) { if (side0) rep.ign.push([e.user, raw, 'cidade não reconhecida']); else rep.chatter++; continue; }
-    if (mc.amb) { rep.ign.push([e.user, raw, ambMsg(mc.amb)]); continue; }
+    if (!mc) { if (side0) ign(e, 'cidade não reconhecida'); else rep.chatter++; continue; }
+    if (mc.amb) { ign(e, ambMsg(mc.amb)); continue; }
     const ci = mc.ci;
-    if (side0 === 'x') { rep.ign.push([e.user, raw, 'usou os dois lados no mesmo comentário']); continue; }
+    if (side0 === 'x') { ign(e, 'usou os dois lados no mesmo comentário'); continue; }
     const p = players[e.user] || (players[e.user] = newP());
     const s = side0 || p.side;
-    if (!s) { rep.ign.push([e.user, raw, 'faltou o lado (🔵 ou 🔴)']); continue; }
-    if (p.side && p.side !== s) { rep.ign.push([e.user, raw, `já joga pela ${sideName(p.side)}`]); continue; }
+    if (!s) { ign(e, 'faltou o lado (🔵 ou 🔴)'); continue; }
+    if (p.side && p.side !== s) { ign(e, `já joga pela ${sideName(p.side)}`); continue; }
     p.side = s; rep.users.add(e.user);
-    if (!p.casas.includes(ci)) { p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); }
-    else rep.dup++;
-    mentions.forEach(m => pend.push([e.user, m, ci, raw]));
+    if (!p.casas.includes(ci)) { p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); act(e, `🏠 casa em ${cities[ci].name} - ${cities[ci].uf}${cities[ci].f === e.user ? ' (fundador)' : ''}`); }
+    else { rep.dup++; act(e, `já tinha casa em ${cities[ci].name}`); }
+    mentions.forEach(m => pend.push([e.user, m, ci, raw, e]));
   }
-  for (const [u, m, ci, raw] of pend) {
+  for (const [u, m, ci, raw, e] of pend) {
     const p = players[u], tg = players[m], k = u + '|' + m + '|' + ci;
     if (credited.has(k)) continue;
-    if (!tg || !tg.casas.includes(ci)) { rep.ign.push([u, raw, `@${m} ainda não tem casa em ${cities[ci].name}`]); continue; }
+    if (!tg || !tg.casas.includes(ci)) continue; // amigo ainda sem casa na cidade: vale só o +3 de marcar
     const r = sendInvite(u, m, ci);
-    if (r === 'ok') rep.pts++; else if (r !== 'dup') rep.ign.push([u, raw, r]);
+    if (r === 'ok') { rep.pts++; act(e, `🤝 convite de aliança para @${m}`); } else if (r !== 'dup') ign(e, r);
   }
   // respostas aos convites: "aceito @fulano" (ou "recuso @fulano"), opcionalmente com a cidade
-  for (const [u, from, ok, raw, mc] of accepts) {
+  for (const [u, from, ok, raw, mc, e] of accepts) {
     const p = players[u];
     const idx = p ? p.reqIn.findIndex(r => r.from === from && (!mc || mc.ci === undefined || r.ci === mc.ci)) : -1;
-    if (idx < 0) { rep.ign.push([u, raw, `não há convite de @${from} para @${u} responder`]); continue; }
-    answerInvite(u, idx, ok, true); if (ok) rep.acc++;
+    if (idx < 0) { ign(e, `não há convite de @${from} para @${u} responder`); continue; }
+    answerInvite(u, idx, ok, true); if (ok) { rep.acc++; act(e, `🤝 aceitou @${from} (+1 voto)`); } else act(e, `recusou @${from}`);
   }
   return rep;
 }
@@ -1560,6 +1571,7 @@ function openLogin() {
 }
 (() => {
   const row = $('adminRow');
+  const ud = document.createElement('button'); ud.className = 'chip'; ud.style.cssText = 'font-size:15px;padding:5px 14px'; ud.textContent = 'desfazer'; ud.onclick = openUndo; row.insertBefore(ud, row.querySelector('#pubBtn'));
   const pl = document.createElement('button'); pl.className = 'chip'; pl.style.cssText = 'font-size:15px;padding:5px 14px'; pl.textContent = 'link do post'; pl.onclick = openPostLink; row.insertBefore(pl, row.querySelector('#pubBtn'));
   const cb = document.createElement('button'); cb.className = 'chip'; cb.id = 'claimsBtn'; cb.style.cssText = 'font-size:15px;padding:5px 14px'; cb.onclick = openClaims; row.insertBefore(cb, row.querySelector('#pubBtn'));
   const out = document.createElement('button'); out.className = 'chip'; out.id = 'logoutBtn'; out.hidden = true;
@@ -1592,7 +1604,25 @@ function runImport() {
   const txt = $('impText').value;
   if (!txt.trim()) { toast('Cole os comentários primeiro'); return; }
   const { entries, orphan } = parseComments(txt);
-  const rep = applyImport(entries, $('impReset').checked);
+  const reset = $('impReset').checked;
+  // 1) prévia: simula em cima de uma cópia e volta tudo como estava
+  const base = JSON.stringify(snapshot()), wasDirty = dirty;
+  applyImport(entries, reset);
+  applyState(JSON.parse(base)); dirty = wasDirty; refresh();
+  const useful = e => e.acts.some(x => !/^(✗|🆕|comentário já contado|já tinha casa|@.* já marcado)/.test(x));
+  $('report').innerHTML = `<div class="sec"><h3>Prévia · ${entries.length} comentário(s) de ${new Set(entries.map(e => e.user)).size} pessoa(s)</h3>
+    <p class="note" style="margin:0 0 6px">Nada mudou ainda. Desmarque o que estiver errado e toque em "computar pontos".${orphan ? ` ${orphan} linha(s) sem autor foram ignoradas.` : ''}</p>
+    <div class="tw"><table><thead><tr><th></th><th>Quem</th><th>Comentário</th><th>O que vai acontecer</th></tr></thead><tbody>
+    ${entries.map((e, i) => `<tr><td><input type="checkbox" data-pi="${i}" ${useful(e) ? 'checked' : ''}></td><td>@${html(e.user)}</td><td>${html(e.raw.slice(0, 70))}</td><td class="why">${e.acts.length ? e.acts.map(html).join('<br>') : 'nada (conversa)'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="mrow"><button class="chip" id="pvAll">marcar todos</button><button class="chip" id="pvNone">desmarcar todos</button><span class="grow"></span><button class="chip y" id="pvGo">computar pontos</button></div></div>`;
+  const boxes = () => [...$('report').querySelectorAll('[data-pi]')];
+  $('pvAll').onclick = () => boxes().forEach(b => b.checked = true);
+  $('pvNone').onclick = () => boxes().forEach(b => b.checked = false);
+  $('pvGo').onclick = () => { const sel2 = boxes().filter(b => b.checked).map(b => entries[+b.dataset.pi]); if (!sel2.length) { toast('Nenhum comentário marcado'); return; } computeImport(sel2, reset, orphan); };
+}
+function computeImport(entries, reset, orphan) {
+  const rep = applyImport(entries, reset);
   $('impReset').checked = false;
   refresh();
   rep.users.forEach(u => players[u].casas.forEach(ci => popHandle(ci, u)));
@@ -1621,6 +1651,32 @@ function runImport() {
     <p class="note">Por enquanto só você está vendo. Ao publicar, todo mundo que abrir o link vê o mapa novo.</p>`;
   $('seeMap').onclick = closeModal; $('pubNow').onclick = publishAll; wireClaims();
 }
+// ---------- Dono: remover jogador (ex.: @ lido errado na colagem) ----------
+function removePlayer(h) {
+  const p = players[h]; if (!p) return;
+  p.casas.forEach(ci => {
+    const c = cities[ci]; if (p.side && c[p.side] > 0) c[p.side]--;
+    if (c.f === h) { const nx = Object.keys(players).filter(x => x !== h && players[x].casas.includes(ci)).sort((a, b) => ((players[a].at || {})[ci] || players[a].since) - ((players[b].at || {})[ci] || players[b].since))[0]; c.f = nx || null; }
+  });
+  delete players[h];
+  Object.values(players).forEach(q => {
+    q.allies = q.allies.filter(x => x !== h); q.reqIn = q.reqIn.filter(r => r.from !== h); q.reqOut = q.reqOut.filter(r => r.to !== h);
+    q.sup = q.sup.filter(x => x.f !== h);
+  });
+  [...credited].forEach(k => { const [a, b] = k.split('|'); if (a === h || b === h) credited.delete(k); });
+  log(`${showH(h)} foi removido do jogo`); refresh(); save(); if (sel >= 0) renderPanel();
+}
+// ---------- Dono: desfazer (voltar a uma publicação anterior) ----------
+async function openUndo() {
+  if (!ADMIN || !sb) return;
+  openModal('<h2>Desfazer publicação</h2><p>Carregando o histórico…</p>');
+  const { data, error } = await sb.from('vsp_history').select('id,version,saved_at,data').order('id', { ascending:false }).limit(8);
+  if (error || !data) { $('mcard').innerHTML = '<button class="mx" id="mx">✕</button><h2>Desfazer publicação</h2><p>Não deu para ler o histórico agora.</p>'; $('mx').onclick = closeModal; return; }
+  const row = r => { const P = Object.values(r.data.p || {}), pts = P.reduce((n, q) => n + (q.pts || 0), 0); return `<div class="req"><span><b>versão ${r.version}</b> · ${new Date(r.saved_at).toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' })} · ${P.length} jogadores · ${pts} pts no total</span>${r === data[0] ? '<span class="pp">atual</span>' : `<button class="chip y" data-rv="${r.id}">voltar para esta</button>`}</div>`; };
+  $('mcard').innerHTML = `<button class="mx" id="mx">✕</button><h2>Desfazer publicação</h2><p>Escolha uma versão anterior. O mapa volta a ela e é publicado para todos (a versão atual continua guardada no histórico).</p><div class="reqs">${data.map(row).join('')}</div>`;
+  $('mx').onclick = closeModal;
+  $('mcard').querySelectorAll('[data-rv]').forEach(b => b.onclick = () => { const r = data.find(x => x.id === +b.dataset.rv); applyState(r.data); refresh(); if (sel >= 0) renderPanel(); dirty = true; closeModal(); publishAll(); });
+}
 // ---------- Apoios: +2 pontos e +1 voto para quem recebe ----------
 const KIND = { pres:'Presidente', gov:'Governador', pref:'Prefeito' };
 // quais cargos "from" pode apoiar para "to": presidente qualquer um; governador só do mesmo estado; prefeito só da mesma cidade
@@ -1638,7 +1694,8 @@ function applySupport(from, to, k = 'pres', ci) {
   from = cleanH(from); to = cleanH(to);
   if (!from || !to) return 'faltou o @';
   if (from === to) return 'não dá para apoiar a si mesmo';
-  const t = players[to] || (players[to] = newP());
+  if (!players[to] || !players[to].casas.length) return `@${to} não existe no jogo (confira o @)`;
+  const t = players[to];
   if (!players[from]) players[from] = newP();
   const opt = supportOptions(from, to).find(o => o.k === k && (k !== 'pref' || ci === undefined || o.ci === ci));
   if (!opt || opt.no) return k === 'gov' ? `@${from} não mora no estado de @${to}` : k === 'pref' ? `@${from} não mora na cidade de @${to}` : 'apoio inválido';
