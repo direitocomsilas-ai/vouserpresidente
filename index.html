@@ -1566,22 +1566,43 @@ const ALIAS = { bsb:capOf.DF, sampa:capOf.SP, bh:capOf.MG, poa:capOf.RS, floripa
 Object.entries(STATE).forEach(([uf, name]) => { const k = key(name); if (k !== 'para' && !NAME_IDX.has(k)) NAME_IDX.set(k, [capOf[uf]]); });
 Object.entries(ALIAS).forEach(([a, ci]) => { if (!NAME_IDX.has(a)) NAME_IDX.set(a, [ci]); });
 const UFSET = new Set(UFS.map(u => u.toLowerCase()));
-function matchCity(raw) {
-  const toks = key(raw.replace(/@[\w.]+/g, ' ')).split(' ').filter(Boolean);
+// estados por extenso (ex.: "Santa Maria Rio Grande do Sul", "Bom Jesus do Piauí") — os nomes mais longos primeiro
+const STATE_KEYS = Object.entries(STATE).map(([uf, n]) => [uf, key(n).split(' ')]).sort((a, b) => b[1].length - a[1].length);
+function cityIn(toks) {
   for (let len = Math.min(8, toks.length); len >= 1; len--) {
     for (let i = 0; i + len <= toks.length; i++) {
       const k = toks.slice(i, i + len).join(' ');
       if (len === 1 && k.length < 3) continue;
-      const hit = NAME_IDX.get(k); if (!hit) continue;
-      const uf = toks[i + len];
-      if (hit.length === 1) return { ci:hit[0], k };
-      if (uf && UFSET.has(uf)) { const f = hit.filter(ci => cities[ci].uf.toLowerCase() === uf); if (f.length === 1) return { ci:f[0], k }; }
-      return { amb:hit, k };
+      const hit = NAME_IDX.get(k); if (hit) return { hit, k, i, len };
     }
   }
   return null;
 }
-const ambMsg = amb => { const c = cities[amb[0]]; return `"${c.name}" existe em ${amb.length} estados (${amb.map(ci => cities[ci].uf).join(', ')}); escreva com a UF, ex.: ${c.name} - ${c.uf}`; };
+function matchCity(raw) {
+  const toks = key(raw.replace(/@[\w.]+/g, ' ')).split(' ').filter(Boolean);
+  // procura o nome de um estado escrito por extenso (o último que aparecer)
+  let st = null;
+  for (let i = toks.length - 1; i >= 0 && !st; i--) for (const [uf, sk] of STATE_KEYS) {
+    if (i + sk.length <= toks.length && sk.every((w, j) => toks[i + j] === w)) { st = { uf, i, len:sk.length }; break; }
+  }
+  let m = null, uf = null;
+  // se o nome da cidade já contém o estado inteiro (ex.: "Bom Jesus do Tocantins"), vale a cidade
+  if (st) { const m0 = cityIn(toks); if (m0 && m0.len > st.len && m0.i <= st.i && m0.i + m0.len >= st.i + st.len) st = null; }
+  if (st) {
+    // tira o estado (e o "do/da/de" antes dele) e procura a cidade no que sobrou
+    let i0 = st.i; if (i0 > 0 && /^(do|da|de|em)$/.test(toks[i0 - 1])) i0--;
+    const rest = [...toks.slice(0, i0), ...toks.slice(st.i + st.len)];
+    m = rest.length ? cityIn(rest) : null;
+    if (m) uf = st.uf;
+  }
+  if (!m) { m = cityIn(toks); if (m) { const u = toks[m.i + m.len]; if (u && UFSET.has(u)) uf = u.toUpperCase(); } }
+  if (!m) return null;
+  const { hit, k } = m;
+  if (hit.length === 1) return { ci:hit[0], k };
+  if (uf) { const f = hit.filter(ci => cities[ci].uf === uf); if (f.length === 1) return { ci:f[0], k }; }
+  return { amb:hit, k };
+}
+const ambMsg = amb => { const c = cities[amb[0]]; return `"${c.name}" existe em ${amb.length} estados (${amb.map(ci => cities[ci].uf).join(', ')}); escreva com o estado, ex.: ${c.name} - ${c.uf} ou ${c.name} ${STATE[c.uf]}`; };
 function parseSide(raw, t) {
   const has = (...L) => L.some(x => raw.includes(x));
   const n = has('⚪', '🤍', '⬜', '🏳') || /(^|[^a-z])(sem lado|nenhum lado|neutro|neutra|apartidario|apartidaria|centro)([^a-z]|$)/.test(t);
