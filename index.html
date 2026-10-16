@@ -824,6 +824,34 @@ const TREES = [];
     TREES.push({ x:(lon + OX) * S, z:-(lat + OZ) * S, s:.3 + hash(k, 53) * .28, ry:hash(k, 59) * 6.28 });
   }
 }
+// ---------- Cristo Redentor sobre o morro, ao lado da cidade do Rio de Janeiro ----------
+const CRISTO = (() => {
+  const rio = cities[capOf.RJ], g = new THREE.Group();
+  const stone = toon('#e8e5df'), stoneD = toon('#c9c5bd'), hillM = toon('#4f9a45'), rockM = toon('#8c8a7e');
+  const add = (geo, mat, x, y, z, rx = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; m.rotation.z = rz; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+  // morro (Corcovado)
+  add(new THREE.ConeGeometry(1.25, 1.1, 8), hillM, 0, .55, 0);
+  add(new THREE.ConeGeometry(.42, .38, 7), rockM, 0, 1.0, 0);
+  // estátua (≈1 de altura) no topo
+  const S0 = 1.7, st = new THREE.Group(); st.position.set(0, 1.13, 0); g.add(st);
+  const addS = (geo, mat, x, y, z, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x * S0, y * S0, z * S0); m.scale.setScalar(S0); m.rotation.z = rz; m.castShadow = true; st.add(m); return m; };
+  addS(new THREE.CylinderGeometry(.2, .22, .08, 16), stoneD, 0, .04, 0);          // base
+  addS(new THREE.BoxGeometry(.2, .2, .2), stoneD, 0, .18, 0);                     // pedestal
+  addS(new THREE.CylinderGeometry(.1, .14, .48, 12), stone, 0, .52, 0);           // túnica
+  addS(new THREE.BoxGeometry(.23, .2, .14), stone, 0, .84, 0);                     // peito
+  addS(new THREE.BoxGeometry(.9, .085, .1), stone, 0, .9, 0);                      // braços abertos
+  addS(new THREE.BoxGeometry(.13, .11, .12), stone, -.43, .9, 0);                  // mangas
+  addS(new THREE.BoxGeometry(.13, .11, .12), stone, .43, .9, 0);
+  addS(new THREE.BoxGeometry(.06, .06, .08), stoneD, -.5, .91, 0);                 // mãos
+  addS(new THREE.BoxGeometry(.06, .06, .08), stoneD, .5, .91, 0);
+  addS(new THREE.BoxGeometry(.07, .5, .03), stoneD, .05, .66, .075, .12);          // faixa da túnica
+  addS(new THREE.CylinderGeometry(.04, .045, .05, 10), stone, 0, .965, 0);         // pescoço
+  addS(new THREE.SphereGeometry(.065, 14, 10), stone, 0, 1.03, 0);                 // cabeça
+  // ao lado da cidade, virado para o mar (sudeste do Rio fica à frente da câmera)
+  g.position.set(rio.x - 2.2, TOP, rio.z - .4);
+  scene.add(g);
+  return g;
+})();
 const treeIM = new THREE.InstancedMesh(TREE_GEO, treeMat, TREES.length);
 treeIM.frustumCulled = false; treeIM.castShadow = true; treeIM.receiveShadow = true; scene.add(treeIM);
 function updateTrees() {
@@ -837,6 +865,7 @@ function updateTrees() {
       const l = B.get((bx + dx) + ',' + (bz + dz)); if (!l) continue;
       for (const c of l) { const R = ((c.rad || 2) + 1.6) * CELL + t.s * .5; if (Math.abs(t.x - c.x) < R && Math.abs(t.z - c.z) < R) { hidden = true; break; } }
     }
+    if (Math.hypot(t.x - CRISTO.position.x, t.z - CRISTO.position.z) < 1.4) hidden = true;
     qy.setFromAxisAngle(up, t.ry);
     m4.compose(p4.set(t.x, TOP, t.z), qy, s4.setScalar(hidden ? 0 : t.s)); treeIM.setMatrixAt(i, m4);
   });
