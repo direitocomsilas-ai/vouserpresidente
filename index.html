@@ -1696,7 +1696,7 @@ function openProfile(h) {
   mc.querySelectorAll('[data-dec]').forEach(b => b.onclick = () => { answerInvite(h, +b.dataset.dec, false); openProfile(h); });
   mc.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); const ci = +b.dataset.ci; select(ci, h); picked = { ci, h }; popHandle(ci, h, 3); });
   mc.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
-  mc.querySelectorAll('[data-follow]').forEach(b => b.onclick = () => { if (p.followed) return; p.followed = true; p.claims = p.claims.filter(c => c.kind !== 'seguir'); log(`${showH(h)} segue a página ✓`); refresh(); save(); openProfile(h); });
+  mc.querySelectorAll('[data-follow]').forEach(b => b.onclick = () => { if (p.followed) return; p.followed = true; addPts(p, 15); p.claims = p.claims.filter(c => c.kind !== 'seguir'); log(`${showH(h)} segue a página ✓ · +15 pts`); refresh(); save(); openProfile(h); });
   mc.querySelectorAll('[data-share]').forEach(b => b.onclick = () => { { const i = p.claims.findIndex(c => c.kind === 'story'); if (i >= 0) p.claims.splice(i, 1); } p.shared = (p.shared || 0) + 1; addPts(p, 30); log(`${showH(h)} postou story · +30 pts`); refresh(); save(); openProfile(h); });
 }
 
@@ -2253,15 +2253,15 @@ function pendingClaims() { const out = []; for (const [h, p] of Object.entries(p
 function claimsHTML() {
   const L = pendingClaims(); if (!L.length) return '';
   return `<div class="sec" id="claimsBox"><h3>Esperando sua confirmação (${L.length})</h3>
-    <p class="note" style="margin:0 0 6px">Confira no Instagram. Story marcando @vouserpresidente vale +30 pontos; seguir a página garante a casa (sem pontos).</p>
-    <div class="reqs">${L.map(([h, k]) => `<div class="req"><span><b>@${html(h)}</b> ${k === 'seguir' ? 'disse que seguiu a página' : 'disse que postou story marcando @vouserpresidente'}</span><span class="ra"><a class="chip" style="font-size:14px;padding:4px 12px" href="${igUrl(h)}" target="_blank" rel="noopener">ver perfil</a><button class="chip y" data-cok="${html(h)}|${k}">${k === 'story' ? 'confirmar +30' : 'confirmar'}</button><button class="chip" data-cno="${html(h)}|${k}">recusar</button></span></div>`).join('')}</div></div>`;
+    <p class="note" style="margin:0 0 6px">Confira no Instagram. Story marcando @vouserpresidente vale +30 pontos; seguir a página vale +15 pontos e garante a casa.</p>
+    <div class="reqs">${L.map(([h, k]) => `<div class="req"><span><b>@${html(h)}</b> ${k === 'seguir' ? 'disse que seguiu a página · +15' : 'disse que postou story marcando @vouserpresidente'}</span><span class="ra"><a class="chip" style="font-size:14px;padding:4px 12px" href="${igUrl(h)}" target="_blank" rel="noopener">ver perfil</a><button class="chip y" data-cok="${html(h)}|${k}">${k === 'story' ? 'confirmar +30' : 'confirmar'}</button><button class="chip" data-cno="${html(h)}|${k}">recusar</button></span></div>`).join('')}</div></div>`;
 }
 function decideClaim(h, k, ok) {
   const p = players[h]; if (!p) return;
   const i = p.claims.findIndex(c => c.kind === k); if (i < 0) return;
   p.claims.splice(i, 1);
   if (ok) {
-    if (k === 'seguir' && !p.followed) { p.followed = true; log(`${showH(h)} segue a página ✓`); }
+    if (k === 'seguir' && !p.followed) { p.followed = true; addPts(p, 15); log(`${showH(h)} segue a página ✓ · +15 pts`); }
     if (k === 'story') { p.shared = (p.shared || 0) + 1; addPts(p, 30); log(`${showH(h)} postou story marcando a página · +30 pts`); }
   }
   refresh(); save();
@@ -2275,11 +2275,11 @@ function wireClaims() {
   });
 }
 const REQ_LABEL = r => r.kind === 'apoio' ? `👍 apoia <b>@${html(r.target)}</b> para ${r.office === 'pref' && r.ci != null ? 'prefeito de ' + html(cities[r.ci].name) : (KIND[r.office || 'pres'] || 'Presidente').toLowerCase()} · +5 para @${html(r.target)}`
-  : r.kind === 'seguir' ? '✅ diz que segue @vouserpresidente' : '📲 diz que postou story marcando @vouserpresidente · +30';
+  : r.kind === 'seguir' ? '✅ diz que segue @vouserpresidente · +15' : '📲 diz que postou story marcando @vouserpresidente · +30';
 function applyRequest(r) {
   if (r.kind === 'apoio') return applySupport(r.handle, r.target, r.office || 'pres', r.office === 'pref' && r.ci != null ? r.ci : undefined);
   const p = players[r.handle] || (players[r.handle] = newP());
-  if (r.kind === 'seguir') { p.followed = true; log(`${showH(r.handle)} segue a página ✓`); return 'ok'; }
+  if (r.kind === 'seguir') { if (!p.followed) { p.followed = true; addPts(p, 15); } log(`${showH(r.handle)} segue a página ✓ · +15 pts`); return 'ok'; }
   if (r.kind === 'story') { p.shared = (p.shared || 0) + 1; addPts(p, 30); log(`${showH(r.handle)} postou story · +30 pts`); return 'ok'; }
   return 'pedido desconhecido';
 }
@@ -2329,7 +2329,7 @@ function openJoin(tab = 'casa', pre = {}) {
     aceitar:`<p>Alguém te convidou para ser aliado? Aceite comentando no post.</p>${inp('jFrom', '@ de quem te convidou', pre.from || '')}`,
     seguir:`<ol class="rules" style="list-style:none"><li><b>1</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a>.</span></li><li><b>2</b><span>Comente <b style="min-width:0">segui ✅</b> no post. Compartilhou o jogo? Comente <b style="min-width:0">compartilhei</b>.</span></li><li><b>3</b><span>Quando a página confirmar, entram <b style="min-width:0">+3 pontos</b> para cada um.</span></li></ol><div class="mrow"><button class="chip" id="shareBtn">compartilhar o jogo</button></div>`
   };
-  openModal(`<h2>${tab === 'seguir' ? 'Siga e ganhe +3 pontos' : 'Participar'}</h2>
+  openModal(`<h2>${tab === 'seguir' ? 'Siga e ganhe +15 pontos' : 'Participar'}</h2>
     ${tab === 'seguir' ? '' : `<div class="mrow" style="margin:0 0 6px">${Object.entries(T).map(([k, l]) => `<button class="chip ${k === tab ? 'y' : ''}" style="font-size:14px;padding:5px 12px" data-tab="${k}">${l}</button>`).join('')}</div>`}
     ${body[tab]}
     <div class="sec"><h3>Seu comentário</h3><div id="jPrev" class="req" style="font-weight:900;font-size:15px"></div><p class="note" id="jWarn"></p></div>
@@ -2370,7 +2370,7 @@ function openFollow() {
     </ol>
     <label style="display:block;font-weight:900;font-size:14px;margin-top:8px">Coloque seu @ aqui</label>
     <input id="flMe" placeholder="@seu.instagram" autocomplete="off" style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 16px var(--body);margin-top:4px">
-    <div class="acts" style="margin-top:10px"><button class="act" id="flF"><span>✅ Já sigo @vouserpresidente</span><small>garante a casa</small></button><button class="act" id="flS"><span>📲 Postei story marcando a página</span><small>+30 pts</small></button></div>
+    <div class="acts" style="margin-top:10px"><button class="act" id="flF"><span>✅ Já sigo @vouserpresidente</span><small>+15 pontos · garante a casa</small></button><button class="act" id="flS"><span>📲 Postei story marcando a página</span><small>+30 pts</small></button></div>
     <p class="note" id="flMsg"></p>
     <div class="mrow"><a class="chip" href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">abrir o Instagram</a></div>`);
   const go = async kind => {
@@ -2442,7 +2442,7 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
     <li><b>⬆️</b><span>Subiu de cargo? A vaga na sua cidade abre para o próximo da fila.</span></li>
     <li><b>⏳</b><span>Eleição todo domingo às 21h: os cargos vão para o histórico, os votos e os pontos do mandato reiniciam; os pontos de nível da sua casa continuam.</span></li>
     <li><b>⚽</b><span>Comente também o seu time e ganhe uma cadeira na arquibancada do Maracanã, no Rio.</span></li>
-    <li><b>✅</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> para não perder sua casa, e ache seu @ pelo link da bio.</span></li>
+    <li><b>+15 ✅</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> (a página confere e confirma). Também garante sua casa; ache seu @ pelo link da bio.</span></li>
   </ul>
   <p style="margin-top:12px"><b>Jogo apartidário: os cargos são de brincadeira.</b> Os 5.570 municípios e coordenadas vêm do IBGE. PIB, aprovação e honestidade ainda são de exemplo.</p>`);
 
