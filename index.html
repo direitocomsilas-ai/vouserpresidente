@@ -293,7 +293,12 @@ const handle = () => pick(FIRST) + "." + pick(LAST);
 
 const LEVELS = [{ n:1, name:"casinha", min:0 }, { n:2, name:"sobrado", min:10 }, { n:3, name:"casa alta", min:20 }, { n:4, name:"mansão", min:35 }, { n:5, name:"torre", min:50 }, { n:6, name:"prédio", min:75 }, { n:7, name:"edifício", min:100 }, { n:8, name:"arranha-céu", min:150 }, { n:9, name:"torre de vidro", min:200 }, { n:10, name:"torre com heliponto", min:275 }, { n:11, name:"torre de luxo", min:350 }, { n:12, name:"megatorre", min:450 }, { n:13, name:"torre dourada", min:600 }, { n:14, name:"torre de diamante", min:800 }, { n:15, name:"o topo do mapa", min:1100 }];
 const levelOfScore = s => LEVELS.reduce((l, L) => s >= L.min ? L.n : l, 1);
-const scoreOf = p => p.pts;
+const scoreOf = p => p.pts;           // pontos totais: nível da casa (não zeram)
+const wkOf = p => p.wk || 0;          // pontos do mandato da semana: definem os cargos (zeram no domingo 21h)
+function addPts(p, n) { p.pts = Math.max(0, p.pts + n); p.wk = Math.max(0, (p.wk || 0) + n); }
+const TOT = c => c.b + c.r + (c.n || 0);
+// lado que domina a cidade (null = vazia ou empate)
+function domSide(c) { const v = [['b', c.b], ['r', c.r], ['n', c.n || 0]].sort((x, y) => y[1] - x[1]); return v[0][1] > 0 && v[0][1] > v[1][1] ? v[0][0] : null; }
 const levelOf = p => levelOfScore(scoreOf(p));
 
 function info(ci) {
@@ -311,24 +316,27 @@ const players = {};
 const credited = new Set();
 const COMMENTED = new Set();
 const ckey = (u, raw) => { let h = 5381; const t = u + '|' + norm(raw).replace(/\s+/g, ' ').trim(); for (let i = 0; i < t.length; i++) h = (h * 33 ^ t.charCodeAt(i)) >>> 0; return h.toString(36); };
-const newP = () => ({ at:{}, sup:[], side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], claims:[], tagged:[], since:Date.now() });
-const fixP = p => { const d = newP(); for (const k in d) if (p[k] === undefined) p[k] = d[k]; p.sup = p.sup.map(x => typeof x === 'string' ? { f:x, k:'pres' } : x); p.claims = p.claims.map(c => c.kind === 'compartilhar' ? { kind:'story', t:c.t } : c); if (Array.isArray(p.shared)) p.shared = p.shared.length; return p; };
+const newP = () => ({ at:{}, sup:[], wk:0, side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], claims:[], tagged:[], since:Date.now() });
+const fixP = p => { const d = newP(); if (p.wk === undefined) p.wk = p.pts || 0; for (const k in d) if (p[k] === undefined) p[k] = d[k]; p.sup = p.sup.map(x => typeof x === 'string' ? { f:x, k:'pres' } : x); p.claims = p.claims.map(c => c.kind === 'compartilhar' ? { kind:'story', t:c.t } : c); if (Array.isArray(p.shared)) p.shared = p.shared.length; return p; };
 const showH = h => '@' + h;
 const igUrl = h => 'https://www.instagram.com/' + encodeURIComponent(h) + '/';
 const igLink = (h, label) => `<a class="ig" href="${igUrl(h)}" target="_blank" rel="noopener"><span class="igi" aria-hidden="true"></span>${label || 'abrir @' + h + ' no Instagram'}</a>`;
 let STATE_V = 0, ADMIN = false, dirty = false, ART = null;
 const DRAFT = 'vsp-rascunho-v1';
 let POST = '';
-function snapshot() { return { v:STATE_V, a:cities.filter(c => c.b + c.r).map(c => [c.i, c.b, c.r, c.f || null]), p:players, k:[...credited], post:POST, c:[...COMMENTED] }; }
+const nextSunday21 = ts => { const br = new Date(ts - 3 * 3600e3); const base = Date.UTC(br.getUTCFullYear(), br.getUTCMonth(), br.getUTCDate(), 21, 0, 0); let add = (7 - br.getUTCDay()) % 7; if (add === 0 && br.getUTCHours() >= 21) add = 7; return base + add * 864e5 + 3 * 3600e3; };
+let MAND = { n:1, end:nextSunday21(Date.now()) }, HIST = [];
+function snapshot() { return { v:STATE_V, a:cities.filter(c => TOT(c)).map(c => c.n ? [c.i, c.b, c.r, c.f || null, c.n] : [c.i, c.b, c.r, c.f || null]), p:players, k:[...credited], post:POST, c:[...COMMENTED], m:MAND, h:HIST }; }
 function applyState(d) {
-  cities.forEach(c => { c.b = 0; c.r = 0; c.f = null; c.inf = null; });
+  cities.forEach(c => { c.b = 0; c.r = 0; c.n = 0; c.f = null; c.inf = null; });
   for (const k in players) delete players[k];
   credited.clear(); COMMENTED.clear();
   if (!d) return;
-  (d.a || []).forEach(([i, b, r, f]) => { if (cities[i]) { cities[i].b = b; cities[i].r = r; cities[i].f = f; } });
+  (d.a || []).forEach(([i, b, r, f, n]) => { if (cities[i]) { cities[i].b = b; cities[i].r = r; cities[i].f = f; cities[i].n = n || 0; } });
   Object.assign(players, d.p || {}); Object.values(players).forEach(fixP); (d.k || []).forEach(k => credited.add(k));
   POST = d.post || '';
   COMMENTED.clear(); (d.c || []).forEach(k => COMMENTED.add(k));
+  MAND = d.m && d.m.end ? d.m : { n:1, end:nextSunday21(Date.now()) }; HIST = d.h || [];
 }
 try { const d = JSON.parse(document.getElementById('state').textContent || '{}'); STATE_V = d.v || 0; applyState(d); } catch (e) {}
 // rascunho do dono: alterações ainda não publicadas
@@ -674,7 +682,7 @@ const plazaGeo = merge([
   ]),
   cyl(.12, .14, .04, 14, '#d5dbe2', 0, .03, 0), cyl(.09, .09, .045, 14, '#5fc6ee', 0, .035, 0), cyl(.02, .026, .14, 6, '#d5dbe2', 0, .03, 0)
 ]);
-const SIDE_COL = { b:new THREE.Color('#2f6fec'), r:new THREE.Color('#e5484d') };
+const SIDE_COL = { b:new THREE.Color('#2f6fec'), r:new THREE.Color('#e5484d'), n:new THREE.Color('#9aa3b2') };
 const WHITE = new THREE.Color('#ffffff'), NEUTRAL = new THREE.Color('#f4f4f4');
 const NC = cities.length;
 const HCAP = [100000, 40000, 25000, 20000, 8000, 6000, 5000, 4000, 3000, 3000, 2500, 2000, 1500, 1200, 1000];
@@ -697,8 +705,8 @@ const GY = TOP + .03; // chão da cidade
 
 const LW = [.42, .2, .12, .08, .05, .035, .025, .02, .015, .01, .008, .006, .004, .003, .002];
 function anonLevel(ci, k) { let r = hash(ci + 11, k + 3), L = 0; while (L < 14 && r > LW[L]) { r -= LW[L]; L++; } return L + 1; }
-let byCity = new Map(), kings = {}, votesCity = new Map(), votesNat = { b:new Map(), r:new Map() }, presidents = { b:null, r:null };
-const votesOf = h => (votesNat.b.get(h) || 0) + (votesNat.r.get(h) || 0);
+let byCity = new Map(), kings = {}, votesCity = new Map(), votesNat = { b:new Map(), r:new Map(), n:new Map() }, presidents = { b:null, r:null, n:null };
+const votesOf = h => (votesNat.b.get(h) || 0) + (votesNat.r.get(h) || 0) + (votesNat.n.get(h) || 0);
 const supOf = h => (players[h] && players[h].sup ? players[h].sup.length : 0);
 const supK = (h, k, ci) => (players[h] && players[h].sup ? players[h].sup.filter(x => x.k === k && (ci === undefined || x.ci === ci)).length : 0);
 const presVotes = h => votesOf(h) + supK(h, 'pres');
@@ -712,13 +720,13 @@ function officials(ci) {
   const arr = h => { const p = players[h]; return (p.at && p.at[ci]) || p.since || 0; };
   // quem mais pontua governa (empate: fundador, depois quem chegou primeiro)
   const L = Object.keys(players).filter(h => players[h].casas.includes(ci) && players[h].side)
-    .sort((a, b) => scoreOf(players[b]) - scoreOf(players[a]) || ((c.f === b) - (c.f === a)) || arr(a) - arr(b))
-    .map(h => [h, scoreOf(players[h])]);
+    .sort((a, b) => wkOf(players[b]) - wkOf(players[a]) || scoreOf(players[b]) - scoreOf(players[a]) || ((c.f === b) - (c.f === a)) || arr(a) - arr(b))
+    .map(h => [h, wkOf(players[h])]);
   return { pref:L[0] || null, ver:L.slice(1, 11) };
 }
 function rolesOf(h) {
   const out = [];
-  ['b', 'r'].forEach(sd => { if (presidents[sd] && presidents[sd][0] === h) out.push(`🏛️ Presidente ${sideEmo(sd)}`); });
+  ['b', 'r', 'n'].forEach(sd => { if (presidents[sd] && presidents[sd][0] === h) out.push(`🏛️ Presidente ${sideEmo(sd)}`); });
   Object.entries(OFF.gov).forEach(([uf, g]) => { if (g === h) out.push(`Governador(a) de ${STATE[uf]}`); });
   Object.entries(OFF.sen).forEach(([uf, g]) => { if (g === h) out.push(`Senador(a) por ${STATE[uf]}`); });
   Object.entries(OFF.dep).forEach(([uf, L]) => { if (L.includes(h)) out.push(`Deputado(a) federal por ${uf}`); });
@@ -727,10 +735,15 @@ function rolesOf(h) {
   return out;
 }
 function cityHouses(c) {
-  const tot = c.b + c.r, n = Math.min(NS, tot), real = byCity.get(c.i) || [];
-  const rb = Math.max(0, c.b - real.filter(x => x.side === 'b').length), rr = Math.max(0, c.r - real.filter(x => x.side === 'r').length);
-  const list = real.slice(0, n), rest = n - list.length, nb = rb + rr ? Math.round(rest * rb / (rb + rr)) : 0;
-  for (let k = 0; k < rest; k++) list.push({ side:Math.floor((k + 1) * nb / rest) > Math.floor(k * nb / rest) ? 'b' : 'r', lvl:anonLevel(c.i, k) });
+  const tot = TOT(c), n = Math.min(NS, tot), real = byCity.get(c.i) || [];
+  const rem = { b:Math.max(0, c.b - real.filter(x => x.side === 'b').length), r:Math.max(0, c.r - real.filter(x => x.side === 'r').length), n:Math.max(0, (c.n || 0) - real.filter(x => x.side === 'n').length) };
+  const list = real.slice(0, n), rest = n - list.length, rt = rem.b + rem.r + rem.n;
+  const acc = { b:0, r:0, n:0 };
+  for (let k = 0; k < rest; k++) {
+    let best = 'b', bv = -1;
+    ['b', 'r', 'n'].forEach(sd => { const want = rt ? rest * rem[sd] / rt : 0, v = want - acc[sd]; if (v > bv) { bv = v; best = sd; } });
+    acc[best]++; list.push({ side:best, lvl:anonLevel(c.i, k) });
+  }
   return list.sort((a, b) => (b.lvl - a.lvl) || ((b.h ? 1 : 0) - (a.h ? 1 : 0)));
 }
 function writeHouse(c, k, s) {
@@ -743,7 +756,7 @@ function writeHouse(c, k, s) {
 }
 let active = [], HREF = [];
 function rebuildAll() {
-  byCity = new Map(); kings = {}; votesCity = new Map(); votesNat = { b:new Map(), r:new Map() };
+  byCity = new Map(); kings = {}; votesCity = new Map(); votesNat = { b:new Map(), r:new Map(), n:new Map() };
   credited.forEach(k => {
     const [from, , cs] = k.split('|'), ci = +cs, p = players[from];
     if (!p || !p.side) return;
@@ -752,12 +765,12 @@ function rebuildAll() {
     votesNat[p.side].set(from, (votesNat[p.side].get(from) || 0) + 1);
   });
   // eleições: votos = apoios recebidos + alianças aceitas (empate: pontos, casas, quem chegou primeiro)
-  const elect = (a, b) => scoreOf(b[1]) - scoreOf(a[1]) || presVotes(b[0]) - presVotes(a[0]) || b[1].casas.length - a[1].casas.length || (a[1].since || 0) - (b[1].since || 0);
+  const elect = (a, b) => wkOf(b[1]) - wkOf(a[1]) || scoreOf(b[1]) - scoreOf(a[1]) || presVotes(b[0]) - presVotes(a[0]) || b[1].casas.length - a[1].casas.length || (a[1].since || 0) - (b[1].since || 0);
   const cands = Object.entries(players).filter(([, p]) => p.side && p.casas.length);
-  ['b', 'r'].forEach(sd => { const c = cands.filter(([, p]) => p.side === sd).sort(elect)[0]; presidents[sd] = c ? [c[0], scoreOf(c[1])] : null; });
+  ['b', 'r', 'n'].forEach(sd => { const c = cands.filter(([, p]) => p.side === sd).sort(elect)[0]; presidents[sd] = c ? [c[0], wkOf(c[1])] : null; });
   // por estado: 1º governador, 2º senador, 3º e 4º deputados federais (presidentes ficam de fora)
   OFF = { gov:{}, sen:{}, dep:{} };
-  const presSet = new Set(['b', 'r'].map(sd => presidents[sd] && presidents[sd][0]).filter(Boolean));
+  const presSet = new Set(['b', 'r', 'n'].map(sd => presidents[sd] && presidents[sd][0]).filter(Boolean));
   const byUf = {};
   cands.forEach(e => { if (presSet.has(e[0])) return; const uf = homeUf(e[1]); (byUf[uf] = byUf[uf] || []).push(e); });
   const electGov = elect;
@@ -776,8 +789,8 @@ function rebuildAll() {
   HREF = MODELS.map(() => []);
   active = [];
   for (const c of cities) {
-    const tot = c.b + c.r;
-    dotIM.setColorAt(c.i, !tot || c.b === c.r ? WHITE : SIDE_COL[c.b > c.r ? 'b' : 'r']);
+    const tot = TOT(c);
+    { const ds = domSide(c); dotIM.setColorAt(c.i, !tot || !ds ? WHITE : SIDE_COL[ds]); }
     if (!tot) { c.list = []; c.ref = []; continue; }
     active.push(c.i);
     c.list = cityHouses(c); c.ref = []; c.fref = [];
@@ -799,7 +812,7 @@ function rebuildAll() {
     const ph = c.cap ? 1.1 : .7, off = .36, fs = c.cap ? 1 : .7;
     m4.compose(p4.set(c.x + off, GY + ph / 2, c.z - off), q4, s4.set(1, ph, 1)); poleIM.setMatrixAt(ac, m4);
     m4.compose(p4.set(c.x + off + .21 * fs, GY + ph - .13 * fs, c.z - off), q4, s4.set(fs, fs, fs)); cflagIM.setMatrixAt(ac, m4);
-    cflagIM.setColorAt(ac, c.b === c.r ? NEUTRAL : SIDE_COL[c.b > c.r ? 'b' : 'r']);
+    { const ds = domSide(c); cflagIM.setColorAt(ac, ds ? SIDE_COL[ds] : NEUTRAL); }
     ac++;
   }
   cnt.forEach((n, L) => HM[L].count = n);
@@ -879,7 +892,7 @@ function updateDots(d) {
   lastDotD = d;
   const r = Math.min(1.5, Math.max(.05, d * .0042)), hideActive = d < 60;
   for (const c of cities) {
-    const tot = c.b + c.r;
+    const tot = TOT(c);
     let rr = tot ? r * (c.cap ? 1.7 : 1.35) : 0;
     if (hideActive && tot) rr = 0;
     m4.compose(p4.set(c.x, TOP + .035, c.z), q4, s4.set(rr, 1, rr)); dotIM.setMatrixAt(c.i, m4);
@@ -936,7 +949,7 @@ function flyTo(t, d) {
   focus = { t:t.clone(), d };
 }
 const curDist = () => camera.position.distanceTo(controls.target);
-function focusCity(ci, d) { const c = cities[ci]; d = d || Math.max(5, ((c.b + c.r ? c.rad : 2) + 2) * CELL * 4.2); flyTo(new THREE.Vector3(c.x, TOP, c.z + (innerWidth < 760 ? 1.6 : 0)), Math.min(curDist(), d)); }
+function focusCity(ci, d) { const c = cities[ci]; d = d || Math.max(5, ((TOT(c) ? c.rad : 2) + 2) * CELL * 4.2); flyTo(new THREE.Vector3(c.x, TOP, c.z + (innerWidth < 760 ? 1.6 : 0)), Math.min(curDist(), d)); }
 $('zin').onclick = () => flyTo(controls.target, Math.max(2.5, curDist() * .5));
 $('zout').onclick = () => flyTo(controls.target, Math.min(650, curDist() * 1.8));
 $('zall').onclick = () => { closePanel(); flyTo(CENTER, fitDist()); };
@@ -967,11 +980,11 @@ canvas.addEventListener('pointerup', e => {
   const pxPerUnit = Math.abs(v3.x - ax) / 2 * w;
   let best = -1, bd = Infinity;
   for (const c of cities) {
-    if (!(c.b + c.r) && c.i !== sel) continue;
+    if (!(TOT(c)) && c.i !== sel) continue;
     v3.set(c.x, TOP, c.z).project(camera); if (v3.z > 1) continue;
     const sx = (v3.x + 1) / 2 * w, sy = (1 - v3.y) / 2 * h;
     let d = Math.hypot(sx - mx, sy - my);
-    const reach = Math.max(22, (c.b + c.r ? (c.rad + 1.5) * CELL : .2) * pxPerUnit);
+    const reach = Math.max(22, (TOT(c) ? (c.rad + 1.5) * CELL : .2) * pxPerUnit);
     if (d > reach) continue;
     d = d / reach; if (c.cap) d *= .8;
     if (d < bd) { bd = d; best = c.i; }
@@ -1035,7 +1048,7 @@ function setText(el, n, k, f) {
 function drawLabels(d) {
   const w = canvas.clientWidth, h = canvas.clientHeight, near = d < 45;
   capLabs.forEach(el => {
-    const c = cities[el.ci], kg = kings[c.uf], made = c.b + c.r > 0, isSel = el.ci === sel;
+    const c = cities[el.ci], kg = kings[c.uf], made = TOT(c) > 0, isSel = el.ci === sel;
     if (near && !made && !isSel) { el.hidden = true; return; }
     setText(el, near || isSel ? c.name : c.uf, !near && kg ? '👑 ' + showH(kg.h) : '', (near || isSel) && made ? founderHTML(c) : '');
     placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + 1.4 : .8);
@@ -1060,22 +1073,25 @@ function drawLabels(d) {
 
 // ---------- Interface ----------
 let sel = -1, hlHandle = null;
-const sideName = s => s === 'b' ? 'Direita' : 'Esquerda';
-const sideEmo = s => s === 'b' ? '🔵' : '🔴';
-const flagText = c => !(c.b + c.r) ? '⚪ Sem bandeira ainda' : c.b === c.r ? '⚖️ Empate' : `${sideEmo(c.b > c.r ? 'b' : 'r')} Bandeira da ${sideName(c.b > c.r ? 'b' : 'r')}`;
-const flagCls = c => !(c.b + c.r) || c.b === c.r ? 'n' : c.b > c.r ? 'b' : 'r';
+const sideName = s => s === 'b' ? 'Direita' : s === 'r' ? 'Esquerda' : 'Sem lado';
+const sideEmo = s => s === 'b' ? '🔵' : s === 'r' ? '🔴' : '⚪';
+const flagText = c => { if (!TOT(c)) return '🏳️ Sem bandeira ainda'; const d = domSide(c); return !d ? '⚖️ Empate' : d === 'n' ? '⚪ Bandeira sem lado' : `${sideEmo(d)} Bandeira da ${sideName(d)}`; };
+const flagCls = c => { const d = domSide(c); return d === 'b' || d === 'r' ? d : 'n'; };
 let toastT;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 1900); }
 function log(text) { $('ticker').textContent = text; }
 
 function renderHUD() {
   let B = 0, R = 0;
-  active.forEach(ci => { B += cities[ci].b; R += cities[ci].r; });
-  const pb = B + R ? B / (B + R) * 100 : 50;
+  let N = 0; active.forEach(ci => { B += cities[ci].b; R += cities[ci].r; N += cities[ci].n || 0; });
+  const pb = B + R ? B / (B + R) * 100 : 50; void pb;
   $('count').textContent = `${fmt(B + R)} casas em ${fmt(active.length)} cidades`;
   $('natB').textContent = `🔵 ${Math.round(pb)}%`; $('natR').textContent = `${100 - Math.round(pb)}% 🔴`;
-  $('bb').style.width = pb + '%'; $('br').style.width = (100 - pb) + '%';
-  $('pres').innerHTML = ['b', 'r'].map(sd => `<span class="${sd}">🏛️ ${sideEmo(sd)} ${presidents[sd] ? html(showH(presidents[sd][0])) + ` · ${presidents[sd][1]} pts` : 'presidência vaga'}</span>`).join('');
+  { const T = B + R + N, fb = T ? B / T * 100 : 50, fr = T ? R / T * 100 : 50, fn = T ? N / T * 100 : 0;
+    let bn = document.getElementById('bn'); if (!bn) { bn = document.createElement('i'); bn.id = 'bn'; bn.style.background = '#9aa3b2'; $('bb').after(bn); }
+    $('bb').style.width = fb + '%'; bn.style.width = fn + '%'; $('br').style.width = fr + '%';
+    $('natB').textContent = `🔵 ${Math.round(fb)}%`; $('natR').textContent = `${Math.round(fr)}% 🔴${N ? ` · ⚪ ${Math.round(fn)}%` : ''}`; }
+  $('pres').innerHTML = ['b', 'r', 'n'].filter(sd => sd !== 'n' || presidents.n).map(sd => `<span class="${sd}">🏛️ ${sideEmo(sd)} ${presidents[sd] ? html(showH(presidents[sd][0])) + ` · ${presidents[sd][1]} pts` : 'presidência vaga'}</span>`).join('');
   if (active.length && /vazio/.test($('ticker').textContent)) log('Comente no post do @vouserpresidente: CIDADE + @ + 🔵 direita ou 🔴 esquerda');
   renderBoard(B, R);
 }
@@ -1086,9 +1102,9 @@ document.getElementById('app').appendChild(board);
 const bcss = document.createElement('style');
 bcss.textContent = `#board{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:200px;z-index:5;width:230px;padding:10px 12px;font-size:13px}
 #board h4{margin:0 0 4px;font-size:10.5px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
-#board .sides{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+#board .sides{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:8px}
 #board .sides div{border:2px solid var(--ink);border-radius:12px;padding:4px 8px;font-weight:900;color:var(--on)}
-#board .sides .b{background:var(--blue)} #board .sides .r{background:var(--red)}
+#board .sides .b{background:var(--blue)} #board .sides .r{background:var(--red)} #board .sides .n{background:#9aa3b2}
 #board .sides b{display:block;font-family:var(--display);font-weight:400;font-size:22px;line-height:1}
 #board .sides small{font-size:10.5px;font-weight:800;opacity:.9}
 #board .pres{display:flex;align-items:center;gap:6px;width:100%;text-align:left;border:2px solid var(--ink);border-radius:12px;background:var(--sun);padding:5px 8px;font:900 13px var(--body);cursor:pointer;margin-bottom:8px}
@@ -1099,6 +1115,7 @@ bcss.textContent = `#board{position:absolute;left:max(16px,env(safe-area-inset-l
 #board ol .c{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #board ol small{color:var(--muted);font-weight:900}
 #board .x{display:none}
+.dot.n,.pp .dot.n{background:#9aa3b2} .badge.n{background:var(--line)}
 #board .mand{font:900 11.5px var(--body);background:var(--ink);color:#fff;border-radius:10px;padding:5px 8px;margin-bottom:8px}
 @media (max-width:760px){#board{top:calc(172px + env(safe-area-inset-top,0px));width:178px;font-size:12px;padding:7px 9px}
  #board.min .hide-m{display:none} #board .sides b{font-size:18px} #board ol button{font-size:12px}}
@@ -1106,29 +1123,42 @@ bcss.textContent = `#board{position:absolute;left:max(16px,env(safe-area-inset-l
 document.head.appendChild(bcss);
 // mandato fecha domingo às 21h (horário de Brasília)
 function mandText() {
-  const now = Date.now(), br = new Date(now - 3 * 3600e3); // relógio de Brasília (UTC-3)
-  const d = new Date(Date.UTC(br.getUTCFullYear(), br.getUTCMonth(), br.getUTCDate(), 21, 0, 0));
-  let add = (7 - br.getUTCDay()) % 7; if (add === 0 && br.getUTCHours() >= 21) add = 7;
-  const end = d.getTime() + add * 864e5 + 3 * 3600e3, ms = Math.max(0, end - now);
+  const ms = MAND.end - Date.now();
+  if (ms <= 0) return `🗳️ Mandato ${MAND.n} encerrado · apurando os eleitos`;
   const dd = Math.floor(ms / 864e5), hh = Math.floor(ms % 864e5 / 3600e3), mm = Math.floor(ms % 3600e3 / 6e4);
-  return `⏳ Mandato fecha domingo às 21h · faltam ${dd ? dd + 'd ' : ''}${hh}h ${String(mm).padStart(2, '0')}min`;
+  return `⏳ Mandato ${MAND.n} fecha domingo às 21h · faltam ${dd ? dd + 'd ' : ''}${hh}h ${String(mm).padStart(2, '0')}min`;
+}
+// fim do mandato: guarda os eleitos, zera os pontos do mandato e os apoios; o nível da casa continua
+function closeMandate() {
+  rebuildAll();
+  const pr = {}; ['b', 'r', 'n'].forEach(sd => { if (presidents[sd]) pr[sd] = presidents[sd]; });
+  const topCities = active.map(ci => cities[ci]).sort((a, b) => TOT(b) - TOT(a)).slice(0, 5).map(c => { const o = officials(c.i); return [c.i, o.pref ? o.pref[0] : null]; });
+  HIST.unshift({ n:MAND.n, end:MAND.end, pres:pr, gov:{ ...OFF.gov }, cities:topCities });
+  HIST = HIST.slice(0, 20);
+  Object.values(players).forEach(p => { p.wk = 0; p.sup = []; });
+  MAND = { n:MAND.n + 1, end:nextSunday21(Date.now()) };
+  log(`Mandato ${MAND.n - 1} encerrado! Começou o mandato ${MAND.n}.`);
+}
+function checkMandate() {
+  if (!ADMIN || Date.now() < MAND.end) return false;
+  closeMandate(); refresh(); if (sel >= 0) renderPanel(); save(); publishAll(); toast(`Mandato ${MAND.n - 1} encerrado: eleitos guardados e votos zerados`);
+  return true;
 }
 setInterval(() => { const el = document.getElementById('mandEl'); if (el) el.textContent = mandText(); }, 30000);
 function renderBoard(B, R) {
   const people = sd => Object.values(players).filter(p => p.side === sd && p.casas.length).length;
-  const nb = people('b'), nr = people('r');
-  const lead = B === R ? null : B > R ? 'b' : 'r';
-  const pr = lead && presidents[lead] ? presidents[lead] : (presidents.b || presidents.r);
-  const top = active.map(ci => cities[ci]).sort((a, b) => (b.b + b.r) - (a.b + a.r) || (b.cap - a.cap) || a.name.localeCompare(b.name)).slice(0, 3);
+  const nb = people('b'), nr = people('r'), nn = people('n');
+  const pr = ['b', 'r', 'n'].map(sd => presidents[sd]).filter(Boolean).sort((x, y) => y[1] - x[1])[0] || null;
+  const top = active.map(ci => cities[ci]).sort((a, b) => TOT(b) - TOT(a) || (b.cap - a.cap) || a.name.localeCompare(b.name)).slice(0, 3);
   board.innerHTML = `
     <h4>Brasil inteiro</h4>
-    <div class="sides"><div class="b"><small>🔵 Direita</small><b>${fmt(nb)}</b><small>${nb === 1 ? 'pessoa' : 'pessoas'}</small></div><div class="r"><small>🔴 Esquerda</small><b>${fmt(nr)}</b><small>${nr === 1 ? 'pessoa' : 'pessoas'}</small></div></div>
+    <div class="sides"><div class="b"><small>🔵 Direita</small><b>${fmt(nb)}</b></div><div class="r"><small>🔴 Esquerda</small><b>${fmt(nr)}</b></div><div class="n"><small>⚪ Sem lado</small><b>${fmt(nn)}</b></div></div>
     <div class="hide-p">
     <div class="mand" id="mandEl">${mandText()}</div>
     <h4>Presidente até agora · quem mais pontua</h4>
     ${pr ? `<button class="pres" data-h="${html(pr[0])}">🏛️ ${sideEmo(players[pr[0]].side)} ${html(showH(pr[0]))}</button>` : '<p class="note" style="margin:0 0 8px">Ninguém ainda: comente e seja o primeiro!</p>'}
     <h4>Top cidades</h4>
-    ${top.length ? `<ol>${top.map((c, i) => `<li><button data-ci="${c.i}"><span class="n">${i + 1}</span><span class="c">${html(c.name)} - ${c.uf}</span><small>${c.b > c.r ? '🔵' : c.r > c.b ? '🔴' : '⚖️'} ${fmt(c.b + c.r)}</small></button></li>`).join('')}</ol>` : '<p class="note" style="margin:0">Nenhuma cidade fundada ainda.</p>'}
+    ${top.length ? `<ol>${top.map((c, i) => `<li><button data-ci="${c.i}"><span class="n">${i + 1}</span><span class="c">${html(c.name)} - ${c.uf}</span><small>${domSide(c) ? sideEmo(domSide(c)) : '⚖️'} ${fmt(TOT(c))}</small></button></li>`).join('')}</ol>` : '<p class="note" style="margin:0">Nenhuma cidade fundada ainda.</p>'}
     </div>`;
   board.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => select(+b.dataset.ci));
   board.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
@@ -1138,7 +1168,7 @@ function refresh() { rebuildAll(); renderHUD(); }
 $('cBsb').onclick = () => select(BSB);
 
 function placeRing() {
-  const c = cities[sel], R = ((c.b + c.r ? c.rad : 1) + 1.2) * CELL;
+  const c = cities[sel], R = ((TOT(c) ? c.rad : 1) + 1.2) * CELL;
   selRing.position.set(c.x, TOP + .06, c.z); selRing.scale.setScalar(R); selRing.visible = true;
 }
 function select(ci, h = null, fly = true) {
@@ -1153,7 +1183,7 @@ function playersHere(ci) {
   return `<div class="sec"><h3>Casas de jogadores (${here.length})</h3><div class="ppl">${show}${here.length > 16 ? `<span class="pp">+${here.length - 16}</span>` : ''}</div></div>`;
 }
 function renderPanel() {
-  const c = cities[sel], inf = info(sel), off = officials(sel), tot = c.b + c.r, pb = tot ? Math.round(c.b / tot * 100) : 50;
+  const c = cities[sel], inf = info(sel), off = officials(sel), tot = TOT(c), pb = tot ? Math.round(c.b / tot * 100) : 50;
   const el = $('panel'); el.hidden = false;
   el.innerHTML = `
     <button class="x" id="px" aria-label="Fechar">✕</button>
@@ -1161,7 +1191,7 @@ function renderPanel() {
     <span class="badge ${flagCls(c)}" id="pdom">${flagText(c)}</span>${c.f ? ` <span class="badge n">🚩 ${html(showH(c.f))} · fundador</span>` : ''}
     <div class="sec">
       <h3>Apoio na cidade</h3>
-      <div class="split"><span class="b" id="ppb">🔵 ${pb}% · ${fmt(c.b)}</span><span class="r" id="ppr">${fmt(c.r)} · ${100 - pb}% 🔴</span></div>
+      <div class="split"><span class="b" id="ppb">🔵 ${pb}% · ${fmt(c.b)}</span><span id="ppn" style="color:var(--muted)">${c.n ? `⚪ ${fmt(c.n)}` : ""}</span><span class="r" id="ppr">${fmt(c.r)} · ${100 - pb}% 🔴</span></div>
       <div class="bar"><i class="b" id="pbb" style="width:${pb}%"></i><i class="r" id="pbr" style="width:${100 - pb}%"></i></div>
     </div>
     <div class="sec grid">
@@ -1181,9 +1211,9 @@ function renderPanel() {
 }
 function liveUpdate(ci) {
   if (ci !== sel) return;
-  const c = cities[ci], tot = c.b + c.r, pb = tot ? Math.round(c.b / tot * 100) : 50, q = id => document.getElementById(id);
+  const c = cities[ci], tot = TOT(c), pb = tot ? Math.round(c.b / tot * 100) : 50, q = id => document.getElementById(id);
   if (!q('ptot')) return;
-  q('ppb').textContent = `🔵 ${pb}% · ${fmt(c.b)}`; q('ppr').textContent = `${fmt(c.r)} · ${100 - pb}% 🔴`;
+  q('ppb').textContent = `🔵 ${pb}% · ${fmt(c.b)}`; q('ppr').textContent = `${fmt(c.r)} · ${100 - pb}% 🔴`; if (q('ppn')) q('ppn').textContent = c.n ? `⚪ ${fmt(c.n)}` : '';
   q('pbb').style.width = pb + '%'; q('pbr').style.width = (100 - pb) + '%'; q('ptot').textContent = fmt(tot);
   q('pdom').className = 'badge ' + flagCls(c); q('pdom').textContent = flagText(c);
 }
@@ -1206,7 +1236,7 @@ function answerInvite(to, idx, ok, quiet) {
   if (a) a.reqOut = a.reqOut.filter(o => !(o.to === to && o.ci === r.ci));
   if (ok && a) {
     const k = r.from + '|' + to + '|' + r.ci;
-    if (!credited.has(k)) { credited.add(k); a.mob[r.ci] = (a.mob[r.ci] || 0) + 1; a.pts += 1; }
+    if (!credited.has(k)) { credited.add(k); a.mob[r.ci] = (a.mob[r.ci] || 0) + 1; addPts(a, 1); }
     if (!a.allies.includes(to)) a.allies.push(to);
     if (!b.allies.includes(r.from)) b.allies.push(r.from);
     log(`${showH(to)} aceitou a aliança de ${showH(r.from)} em ${cities[r.ci].name} · +1 pt para ${showH(r.from)}`);
@@ -1216,7 +1246,7 @@ function answerInvite(to, idx, ok, quiet) {
 }
 // ---------- Perfil do @ ----------
 function rankOf(h) {
-  const rows = Object.entries(players).filter(([, p]) => p.casas.length).sort((a, b) => scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length);
+  const rows = Object.entries(players).filter(([, p]) => p.casas.length).sort((a, b) => wkOf(b[1]) - wkOf(a[1]) || scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length);
   const i = rows.findIndex(([k]) => k === h); return i < 0 ? null : [i + 1, rows.length];
 }
 const cityTag = ci => `${html(cities[ci].name)} - ${cities[ci].uf}`;
@@ -1236,7 +1266,8 @@ function openProfile(h) {
       <div class="sec"><div class="split"><span>${sc} pts</span><span>${N ? `faltam ${N.min - sc} para Nv ${N.n} · ${N.name}` : 'nível máximo'}</span></div><div class="meter" style="height:12px;border:2px solid var(--ink)"><i style="width:${prog}%;background:var(--sun)"></i></div></div>
       <div class="tiles">
         <div class="tile"><span>Casas</span><b>${p.casas.length}</b></div>
-        <div class="tile"><span>Pontos</span><b>${p.pts}</b></div>
+        <div class="tile"><span>Pontos (nível)</span><b>${p.pts}</b></div>
+        <div class="tile"><span>Pontos no mandato</span><b>${wkOf(p)}</b></div>
         <div class="tile"><span>Aliados</span><b>${p.allies.length}</b></div>
         <div class="tile"><span>Votos p/ presidente</span><b>${presVotes(h)}</b></div>
         <div class="tile"><span>Votos p/ governador</span><b>${govVotes(h)}</b></div>
@@ -1262,7 +1293,7 @@ function openProfile(h) {
   const mc = $('mcard');
   $('supBtn').onclick = () => openSupport(h);
   if (ADMIN) {
-    $('adjGo').onclick = () => { const n = Math.round(+$('adjN').value); if (!n) { toast('Digite um número, ex.: 5 ou -5'); return; } p.pts = Math.max(0, p.pts + n); log(`Ajuste: ${showH(h)} ${n > 0 ? '+' : ''}${n} pts`); refresh(); save(); openProfile(h); toast(`${n > 0 ? '+' : ''}${n} pontos`); };
+    $('adjGo').onclick = () => { const n = Math.round(+$('adjN').value); if (!n) { toast('Digite um número, ex.: 5 ou -5'); return; } addPts(p, n); log(`Ajuste: ${showH(h)} ${n > 0 ? '+' : ''}${n} pts`); refresh(); save(); openProfile(h); toast(`${n > 0 ? '+' : ''}${n} pontos`); };
     $('delP').onclick = () => { if ($('delP').dataset.sure !== '1') { $('delP').dataset.sure = '1'; $('delP').textContent = 'toque de novo para confirmar'; return; } removePlayer(h); closeModal(); toast(`${showH(h)} removido`); };
   }
   mc.querySelectorAll('[data-acc]').forEach(b => b.onclick = () => { answerInvite(h, +b.dataset.acc, true); openProfile(h); });
@@ -1270,7 +1301,7 @@ function openProfile(h) {
   mc.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); const ci = +b.dataset.ci; select(ci, h); picked = { ci, h }; popHandle(ci, h, 3); });
   mc.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
   mc.querySelectorAll('[data-follow]').forEach(b => b.onclick = () => { if (p.followed) return; p.followed = true; p.claims = p.claims.filter(c => c.kind !== 'seguir'); log(`${showH(h)} segue a página ✓`); refresh(); save(); openProfile(h); });
-  mc.querySelectorAll('[data-share]').forEach(b => b.onclick = () => { { const i = p.claims.findIndex(c => c.kind === 'story'); if (i >= 0) p.claims.splice(i, 1); } p.shared = (p.shared || 0) + 1; p.pts += 30; log(`${showH(h)} postou story · +30 pts`); refresh(); save(); openProfile(h); });
+  mc.querySelectorAll('[data-share]').forEach(b => b.onclick = () => { { const i = p.claims.findIndex(c => c.kind === 'story'); if (i >= 0) p.claims.splice(i, 1); } p.shared = (p.shared || 0) + 1; addPts(p, 30); log(`${showH(h)} postou story · +30 pts`); refresh(); save(); openProfile(h); });
 }
 
 // ---------- Reconhecer cidade (com UF), estado e lado ----------
@@ -1297,9 +1328,11 @@ function matchCity(raw) {
 }
 const ambMsg = amb => { const c = cities[amb[0]]; return `"${c.name}" existe em ${amb.length} estados (${amb.map(ci => cities[ci].uf).join(', ')}); escreva com a UF, ex.: ${c.name} - ${c.uf}`; };
 function parseSide(raw, t) {
+  const n = raw.includes('⚪') || raw.includes('🤍') || /(^|[^a-z])(sem lado|nenhum lado|neutro|neutra|apartidario|apartidaria|centro)([^a-z]|$)/.test(t);
   const b = raw.includes('🔵') || raw.includes('💙') || /(^|[^a-z])(direita|azul)([^a-z]|$)/.test(t);
   const r = raw.includes('🔴') || /(^|[^a-z])(esquerda|vermelh[oa]?)([^a-z]|$)/.test(t);
-  return b && r ? 'x' : b ? 'b' : r ? 'r' : null;
+  const k = (b ? 1 : 0) + (r ? 1 : 0) + (n ? 1 : 0);
+  return k > 1 ? 'x' : b ? 'b' : r ? 'r' : n ? 'n' : null;
 }
 
 // ---------- Busca: @, cidade ou estado ----------
@@ -1311,7 +1344,7 @@ function searchItems(q) {
     Object.entries(STATE).forEach(([uf, name]) => { if (key(name).startsWith(hk) || uf.toLowerCase() === hk) out.push({ type:'state', i:capOf[uf] }); });
     const cs = [];
     for (const c of cities) { if (c.k.includes(hk)) cs.push(c); }
-    cs.sort((a, b) => (b.k.startsWith(hk) - a.k.startsWith(hk)) || (b.cap - a.cap) || ((b.b + b.r) - (a.b + a.r)) || a.k.localeCompare(b.k));
+    cs.sort((a, b) => (b.k.startsWith(hk) - a.k.startsWith(hk)) || (b.cap - a.cap) || (TOT(b) - TOT(a)) || a.k.localeCompare(b.k));
     cs.slice(0, 8).forEach(c => out.push({ type:'city', i:c.i }));
   }
   const ordered = t.startsWith('@') ? out : [...out.filter(x => x.type !== '@'), ...out.filter(x => x.type === '@')];
@@ -1333,7 +1366,7 @@ function showSug() {
   el.innerHTML = sugItems.map((x, k) => {
     if (x.type === '@') return `<li><button type="button" data-k="${k}"><span>${html(showH(x.h))} ${sideEmo(x.p.side)}</span><small>Nv ${levelOf(x.p)} · ${x.p.casas.length} casa(s)</small></button></li>`;
     const c = cities[x.i];
-    return x.type === 'city' ? `<li><button type="button" data-k="${k}"><span>${html(c.name)} <small>${c.uf}</small></span><small>${c.b + c.r ? fmt(c.b + c.r) + ' casas' : 'sem casas'}</small></button></li>`
+    return x.type === 'city' ? `<li><button type="button" data-k="${k}"><span>${html(c.name)} <small>${c.uf}</small></span><small>${TOT(c) ? fmt(TOT(c)) + ' casas' : 'sem casas'}</small></button></li>`
       : `<li><button type="button" data-k="${k}"><span>${c.state}</span><small>capital: ${html(c.name)}</small></button></li>`;
   }).join('');
   el.hidden = false;
@@ -1375,7 +1408,7 @@ function parseComments(text) {
 let arrivalSeq = 0;
 function applyImport(entries, reset) {
   if (reset) {
-    cities.forEach(c => { c.b = 0; c.r = 0; c.inf = null; c.f = null; });
+    cities.forEach(c => { c.b = 0; c.r = 0; c.n = 0; c.inf = null; c.f = null; });
     for (const k in players) delete players[k];
     credited.clear();
   }
@@ -1390,7 +1423,7 @@ function applyImport(entries, reset) {
     if (!known.has(e.user)) { known.add(e.user); act(e, '🆕 @ novo no jogo (confira)'); }
     const raw = e.raw, full = norm(raw), t = full.replace(/@[a-z0-9._]+/g, ' ');
     // +5 por comentário (cada comentário conta uma vez, mesmo colando de novo)
-    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); pc.pts += 5; rep.cmt++; rep.users.add(e.user); act(e, '+5 comentário'); } else act(e, 'comentário já contado'); }
+    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); addPts(pc, 5); rep.cmt++; rep.users.add(e.user); act(e, '+5 comentário'); } else act(e, 'comentário já contado'); }
     if (/(^|[^a-z])(aceito|aceita|aceitei|aceitamos|aceito alianca|recuso|recusei)([^a-z]|$)/.test(full) && /@[a-z0-9._]{2,30}/.test(full)) {
       const ok = !/(^|[^a-z])(recuso|recusei)([^a-z]|$)/.test(full);
       (full.match(/@[a-z0-9._]{2,30}/g) || []).forEach(m => accepts.push([e.user, m.slice(1), ok, raw, matchCity(raw), e]));
@@ -1407,16 +1440,16 @@ function applyImport(entries, reset) {
       const q = players[e.user] || (players[e.user] = newP());
       if (wantsF && !q.followed && !q.claims.some(c => c.kind === 'seguir')) { q.claims.push({ kind:'seguir', t:Date.now() }); rep.claims.push([e.user, 'seguir']); act(e, '⏳ seguiu (você confirma)'); }
       if (wantsS && !q.claims.some(c => c.kind === 'story')) { q.claims.push({ kind:'story', t:Date.now() }); rep.claims.push([e.user, 'story']); act(e, '⏳ story +30 (você confirma)'); }
-      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); q.pts += 3; rep.tags.push([e.user, m]); act(e, `+3 marcou @${m}`); } else act(e, `@${m} já marcado antes`); });
+      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); addPts(q, 3); rep.tags.push([e.user, m]); act(e, `+3 marcou @${m}`); } else act(e, `@${m} já marcado antes`); });
     }
     if (!mc && (wantsF || wantsS || mentions.length)) continue;
     if (!mc) { if (side0) ign(e, 'cidade não reconhecida'); else rep.chatter++; continue; }
     if (mc.amb) { ign(e, ambMsg(mc.amb)); continue; }
     const ci = mc.ci;
-    if (side0 === 'x') { ign(e, 'usou os dois lados no mesmo comentário'); continue; }
+    if (side0 === 'x') { ign(e, 'usou mais de um lado no mesmo comentário'); continue; }
     const p = players[e.user] || (players[e.user] = newP());
     const s = side0 || p.side;
-    if (!s) { ign(e, 'faltou o lado (🔵 ou 🔴)'); continue; }
+    if (!s) { ign(e, 'faltou o lado (🔵, 🔴 ou ⚪ sem lado)'); continue; }
     if (p.side && p.side !== s) { ign(e, `já joga pela ${sideName(p.side)}`); continue; }
     p.side = s; rep.users.add(e.user);
     if (!p.casas.includes(ci)) { p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); act(e, `🏠 casa em ${cities[ci].name} - ${cities[ci].uf}${cities[ci].f === e.user ? ' (fundador)' : ''}`); }
@@ -1548,6 +1581,7 @@ async function checkOwner() {
       if (d && d.base === DBV) { applyState(d.s); dirty = true; refresh(); toast('Rascunho não publicado restaurado'); }
     } catch (e) {}
     $('logoutBtn').hidden = false;
+    setTimeout(checkMandate, 1500); setInterval(checkMandate, 60000);
   } else { toast('Esta conta não é a dona do jogo'); }
   renderAdmin();
 }
@@ -1701,7 +1735,7 @@ function applySupport(from, to, k = 'pres', ci) {
   if (!opt || opt.no) return k === 'gov' ? `@${from} não mora no estado de @${to}` : k === 'pref' ? `@${from} não mora na cidade de @${to}` : 'apoio inválido';
   if (k === 'pref' && ci === undefined) ci = opt.ci;
   if (t.sup.some(x => x.f === from && x.k === k && (k !== 'pref' || x.ci === ci))) return `@${from} já apoiou @${to} para ${KIND[k].toLowerCase()}`;
-  t.sup.push(k === 'pref' ? { f:from, k, ci } : { f:from, k }); t.pts += 2;
+  t.sup.push(k === 'pref' ? { f:from, k, ci } : { f:from, k }); addPts(t, 2);
   log(`${showH(from)} apoiou ${showH(to)} para ${KIND[k].toLowerCase()} · +2 pts`);
   return 'ok';
 }
@@ -1755,7 +1789,7 @@ function decideClaim(h, k, ok) {
   p.claims.splice(i, 1);
   if (ok) {
     if (k === 'seguir' && !p.followed) { p.followed = true; log(`${showH(h)} segue a página ✓`); }
-    if (k === 'story') { p.shared = (p.shared || 0) + 1; p.pts += 30; log(`${showH(h)} postou story marcando a página · +30 pts`); }
+    if (k === 'story') { p.shared = (p.shared || 0) + 1; addPts(p, 30); log(`${showH(h)} postou story marcando a página · +30 pts`); }
   }
   refresh(); save();
 }
@@ -1848,15 +1882,16 @@ function openPostLink() {
 function openRanking() {
   const rows = Object.entries(players).filter(([, p]) => p.casas.length).sort((a, b) => scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length).slice(0, 30);
   const ks = Object.entries(kings).sort((a, b) => a[0].localeCompare(b[0]));
-  const pres = ['b', 'r'].map(sd => presidents[sd] ? `<button class="pp go" data-h="${html(presidents[sd][0])}">${sideEmo(sd)} ${html(showH(presidents[sd][0]))} · ${presidents[sd][1]} pts</button>` : `<span class="pp">${sideEmo(sd)} vaga</span>`).join('');
+  const pres = ['b', 'r', 'n'].filter(sd => sd !== 'n' || presidents.n).map(sd => presidents[sd] ? `<button class="pp go" data-h="${html(presidents[sd][0])}">${sideEmo(sd)} ${html(showH(presidents[sd][0]))} · ${presidents[sd][1]} pts</button>` : `<span class="pp">${sideEmo(sd)} vaga</span>`).join('');
   openModal(`<h2>Ranking</h2>
     <div class="sec"><h3>🏛️ Presidentes (quem mais pontua no Brasil, um de cada lado)</h3><div class="ppl">${pres}</div></div>
-    <p style="margin-top:10px">Quem mais pontua governa. Comentar +5 · marcar amigo +3 · story marcando @vouserpresidente +30. Toque num nome para ver o perfil.</p>
-    ${rows.length ? `<div class="tw"><table><thead><tr><th>#</th><th>Jogador</th><th>Casa</th><th>Casas</th><th>Votos</th><th>Pontos</th></tr></thead><tbody>
-      ${rows.map(([h, p], i) => `<tr><td>${i + 1}</td><td><button class="chip" style="font-size:14px;padding:3px 10px;box-shadow:none;border-width:2px" data-h="${html(h)}">${html(showH(h))} ${sideEmo(p.side)}</button> <a class="igmini" href="${igUrl(h)}" target="_blank" rel="noopener" aria-label="Instagram de ${html(showH(h))}"><span class="igi" aria-hidden="true"></span></a></td><td>${lvImg(levelOf(p))} Nv ${levelOf(p)}</td><td>${p.casas.length}</td><td>${totalVotes(h)}</td><td>${scoreOf(p)}</td></tr>`).join('')}
+    <p style="margin-top:10px">Quem mais pontua no mandato governa. Comentar +5 · marcar amigo +3 · story marcando @vouserpresidente +30. Os pontos do mandato zeram domingo às 21h; os pontos de nível da casa continuam. Toque num nome para ver o perfil.</p>
+    ${rows.length ? `<div class="tw"><table><thead><tr><th>#</th><th>Jogador</th><th>Casa</th><th>Casas</th><th>Mandato</th><th>Pontos</th></tr></thead><tbody>
+      ${rows.map(([h, p], i) => `<tr><td>${i + 1}</td><td><button class="chip" style="font-size:14px;padding:3px 10px;box-shadow:none;border-width:2px" data-h="${html(h)}">${html(showH(h))} ${sideEmo(p.side)}</button> <a class="igmini" href="${igUrl(h)}" target="_blank" rel="noopener" aria-label="Instagram de ${html(showH(h))}"><span class="igi" aria-hidden="true"></span></a></td><td>${lvImg(levelOf(p))} Nv ${levelOf(p)}</td><td>${p.casas.length}</td><td><b>${wkOf(p)}</b></td><td>${scoreOf(p)}</td></tr>`).join('')}
     </tbody></table></div>` : '<p>Ainda não há jogadores com casa. Cole os comentários de um post ou conquiste uma casa.</p>'}
     ${Object.keys(OFF.gov).length ? `<h2 style="font-size:22px;margin-top:16px">🗳️ Estados: governador, senador e deputados federais</h2><div class="tw"><table><thead><tr><th>UF</th><th>Governador</th><th>Senador</th><th>Deputados federais</th></tr></thead><tbody>
-      ${Object.keys(OFF.gov).sort().map(uf => { const b2 = x => x ? `<button class="pp go" data-h="${html(x)}">${html(showH(x))} · ${scoreOf(players[x])} pts</button>` : '<span class="note">vaga</span>'; return `<tr><td>${uf}</td><td>${b2(OFF.gov[uf])}</td><td>${b2(OFF.sen[uf])}</td><td>${[0, 1].map(i => b2((OFF.dep[uf] || [])[i])).join(' ')}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+      ${Object.keys(OFF.gov).sort().map(uf => { const b2 = x => x ? `<button class="pp go" data-h="${html(x)}">${html(showH(x))} · ${wkOf(players[x])} pts</button>` : '<span class="note">vaga</span>'; return `<tr><td>${uf}</td><td>${b2(OFF.gov[uf])}</td><td>${b2(OFF.sen[uf])}</td><td>${[0, 1].map(i => b2((OFF.dep[uf] || [])[i])).join(' ')}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+    ${HIST.length ? `<h2 style="font-size:22px;margin-top:16px">📜 Mandatos anteriores</h2><div class="reqs">${HIST.map(m => `<div class="req"><span><b>Mandato ${m.n}</b> · até ${new Date(m.end).toLocaleDateString('pt-BR')}</span><span class="ppl">${Object.entries(m.pres || {}).map(([sd, x]) => `<button class="pp go" data-h="${html(x[0])}">🏛️ ${sideEmo(sd)} ${html(showH(x[0]))} · ${x[1]} pts</button>`).join('') || '<span class="note">sem presidente</span>'}</span></div>`).join('')}</div>` : ''}
     ${ks.length ? `<h2 style="font-size:22px;margin-top:16px">👑 Reis dos estados</h2><div class="tw"><table><tbody>
       ${ks.map(([uf, k]) => `<tr><td>${uf}</td><td>${STATE[uf]}</td><td>👑 ${html(showH(k.h))}</td><td>${k.sc} pts</td></tr>`).join('')}</tbody></table></div>` : ''}`);
   $('mcard').querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
@@ -1869,13 +1904,13 @@ $('cLevels').onclick = () => openModal(`<h2>Níveis da casa</h2>
 
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <ul class="rules">
-    <li><b>🏠</b><span>Comente no post de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> o nome da sua cidade e o lado: "Macaé 🔵" ou "Macaé 🔴". O primeiro lado que você usar fica valendo. Se o nome existir em mais de um estado, escreva a UF.</span></li>
+    <li><b>🏠</b><span>Comente no post de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> o nome da sua cidade e o lado: "Macaé 🔵" ou "Macaé 🔴". O primeiro lado que você usar fica valendo. Prefere não escolher? Use "⚪ sem lado". Se o nome existir em mais de um estado, escreva a UF.</span></li>
     <li><b>+5 💬</b><span>Cada comentário no post.</span></li>
     <li><b>+3 👥</b><span>Cada amigo que você marcar (vale uma vez por amigo).</span></li>
     <li><b>+30 📲</b><span>Story marcando <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> (a página confere e confirma).</span></li>
     <li><b>+2 👍</b><span>Cada apoio que você recebe: abra o perfil de alguém, toque em "apoiar" e coloque seu @ (presidente: qualquer um; governador: mesmo estado; prefeito: mesma cidade).</span></li>
-    <li><b>🏛️</b><span>Quem mais pontua governa. Na cidade: prefeito e 10 vereadores. No estado: governador, senador e 2 deputados federais. No Brasil: o presidente de cada lado.</span></li>
-    <li><b>⏳</b><span>O mandato fecha domingo às 21h.</span></li>
+    <li><b>🏛️</b><span>Quem mais pontua governa. Na cidade: prefeito e 10 vereadores. No estado: governador, senador e 2 deputados federais. No Brasil: o presidente de cada lado (🔵, 🔴 e ⚪ sem lado).</span></li>
+    <li><b>⏳</b><span>O mandato fecha domingo às 21h. Aí os cargos ficam guardados no histórico e os pontos do mandato e os apoios zeram; os pontos de nível da sua casa continuam.</span></li>
     <li><b>✅</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> para não perder sua casa, e ache seu @ pelo link da bio.</span></li>
     <li><b>🚩</b><span>O primeiro a comentar uma cidade é o fundador dela.</span></li>
   </ul>
