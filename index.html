@@ -788,6 +788,7 @@ function rebuildAll() {
   byCity.forEach(l => l.sort((a, b) => b.sc - a.sc));
   const cnt = new Array(15).fill(0); let fc = 0, ac = 0, rc = 0;
   HREF = MODELS.map(() => []);
+  spreadCities();
   active = [];
   for (const c of cities) {
     const tot = TOT(c);
@@ -822,6 +823,7 @@ function rebuildAll() {
   [flagIM, cflagIM, dotIM].forEach(m => { if (m.instanceColor) m.instanceColor.needsUpdate = true; });
   lastDotD = -1;
   updateTrees();
+  updateLandmarks();
   if (sel >= 0) placeRing();
 }
 const treeMat = new THREE.MeshLambertMaterial({ vertexColors:true });
@@ -891,6 +893,122 @@ const CONGRESSO = (() => {
   scene.add(g);
   return g;
 })();
+// ---------- Pontos turísticos: os novos ficam EM OBRA até a cidade ter 100 moradores ----------
+// Para adicionar um novo: addLandmark(ci, 'Nome', grupo)  → começa em obra e vai subindo conforme chegam moradores.
+const OBRA_META = 100;
+renderer.localClippingEnabled = true;
+const LANDMARKS = [
+  { ci:capOf.RJ, name:'Cristo Redentor', g:CRISTO, obra:false },     // já inaugurados antes da regra
+  { ci:capOf.DF, name:'Congresso Nacional', g:CONGRESSO, obra:false },
+];
+function obraSign(lm, n) {
+  const cv = lm.cv || (lm.cv = document.createElement('canvas')); cv.width = 512; cv.height = 200;
+  const x = cv.getContext('2d'), pr = Math.min(1, n / lm.need);
+  x.clearRect(0, 0, 512, 200);
+  x.fillStyle = '#1d1d1f'; x.beginPath(); x.roundRect ? x.roundRect(6, 6, 500, 188, 26) : x.rect(6, 6, 500, 188); x.fill();
+  x.lineWidth = 8; x.strokeStyle = '#ffc93c'; x.stroke();
+  x.fillStyle = '#ffc93c'; x.font = '900 46px Nunito, Arial, sans-serif'; x.textAlign = 'center'; x.fillText('🚧 EM OBRA', 256, 62);
+  x.fillStyle = '#fff'; x.font = '800 30px Nunito, Arial, sans-serif'; x.fillText(lm.name, 256, 102);
+  x.fillStyle = '#3a3a3e'; x.fillRect(40, 122, 432, 26); x.fillStyle = '#ffc93c'; x.fillRect(40, 122, 432 * pr, 26);
+  x.fillStyle = '#fff'; x.font = '800 26px Nunito, Arial, sans-serif'; x.fillText(`${Math.min(n, lm.need)}/${lm.need} moradores`, 256, 182);
+  if (lm.tex) lm.tex.needsUpdate = true;
+}
+function makeSite(lm) {
+  const g = lm.g, box = new THREE.Box3().setFromObject(g), sz = box.getSize(new THREE.Vector3()), cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+  lm.y0 = box.min.y; lm.h = sz.y;
+  // recorte: a construção "sobe" de baixo para cima conforme a cidade cresce
+  lm.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), box.max.y);
+  g.traverse(m => { if (m.isMesh) { m.material = m.material.clone(); m.material.clippingPlanes = [lm.plane]; m.material.clipShadows = true; } });
+  const s = new THREE.Group(), W = sz.x * 1.08, D = sz.z * 1.08, H = sz.y;
+  const dirt = toon('#b98a5a'), fence = toon('#ff8a1f'), pipe = toon('#9aa0a8'), yel = toon('#ffc93c'), dark = toon('#3a3a3e');
+  const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; s.add(m); return m; };
+  const t = Math.min(W, D) * .02 + .004;
+  add(new THREE.BoxGeometry(W * 1.12, .01, D * 1.12), dirt, 0, .005, 0);                       // terra
+  [[0, D * .56, W * 1.12, t], [0, -D * .56, W * 1.12, t], [W * .56, 0, t, D * 1.12], [-W * .56, 0, t, D * 1.12]]
+    .forEach(([x, z, w, d]) => add(new THREE.BoxGeometry(w, H * .07 + .02, d), fence, x, H * .035 + .01, z)); // tapume
+  // andaimes nos cantos (acompanham a altura da obra)
+  lm.scaf = [];
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => { const p = add(new THREE.CylinderGeometry(t * .5, t * .5, 1, 6), pipe, a * W * .48, .5, b * D * .48); lm.scaf.push(p); });
+  // guindaste amarelo
+  const ch = H * 1.25 + .05, tx = W * .62, tz = -D * .62;
+  add(new THREE.BoxGeometry(t * 2, ch, t * 2), yel, tx, ch / 2, tz);
+  const jib = add(new THREE.BoxGeometry(W * 1.1, t * 1.6, t * 1.6), yel, tx - W * .35, ch, tz);
+  add(new THREE.BoxGeometry(t * 4, t * 3, t * 3), dark, tx + W * .2, ch - t, tz);
+  add(new THREE.BoxGeometry(t * .4, H * .3, t * .4), dark, tx - W * .8, ch - H * .15, tz);
+  // placa com o progresso
+  obraSign(lm, 0);
+  lm.tex = new THREE.CanvasTexture(lm.cv); lm.tex.anisotropy = 4;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:lm.tex, depthTest:false, transparent:true }));
+  const sw = Math.max(.32, Math.min(.9, W * .9)); sp.scale.set(sw, sw * 200 / 512, 1); sp.position.set(0, ch + sw * .3, 0); sp.renderOrder = 5; s.add(sp);
+  s.position.set(cx, box.min.y, cz);
+  scene.add(s); lm.site = s; lm.lastN = -1;
+}
+function addLandmark(ci, name, g, need = OBRA_META) { const lm = { ci, name, g, obra:true, need }; lmGeo(lm); LANDMARKS.push(lm); makeSite(lm); updateLandmarks(); return lm; }
+function landmarkProgress(lm) { const n = TOT(cities[lm.ci]); return { n, done:!lm.obra || n >= lm.need }; }
+function updateLandmarks() {
+  LANDMARKS.forEach(lm => {
+    if (!lm.obra) return;
+    const { n, done } = landmarkProgress(lm);
+    if (n === lm.lastN) return; lm.lastN = n;
+    lm.site.visible = !done;
+    const pr = done ? 1 : .06 + .7 * Math.min(1, n / lm.need);              // até 76% erguido; o resto só na inauguração
+    lm.plane.constant = done ? 1e6 : lm.y0 + lm.h * pr;
+    const sh = lm.h * Math.min(1, pr + .12);
+    lm.scaf.forEach(p => { p.scale.y = sh; p.position.y = sh / 2; });
+    if (!done) obraSign(lm, n);
+  });
+}
+// ---------- Afasta as cidades vizinhas para que bairros, ruas e pontos turísticos não fiquem um em cima do outro ----------
+// Cada cidade é um quadrado (casas + ruas) e cada ponto turístico um retângulo preso à sua cidade.
+// As cidades maiores (e as capitais) se movem menos; as menores dão espaço.
+function lmGeo(lm) { const c = cities[lm.ci], cx = c.gx ?? c.x, cz = c.gz ?? c.z, bx = new THREE.Box3().setFromObject(lm.g);
+  lm.ox = lm.g.position.x - cx; lm.oz = lm.g.position.z - cz;
+  lm.bx = (bx.min.x + bx.max.x) / 2 - cx; lm.bz = (bx.min.z + bx.max.z) / 2 - cz; lm.hx = (bx.max.x - bx.min.x) / 2; lm.hz = (bx.max.z - bx.min.z) / 2; }
+LANDMARKS.forEach(lmGeo);
+function spreadCities() {
+  cities.forEach(c => { if (c.gx === undefined) { c.gx = c.x; c.gz = c.z; } c.x = c.gx; c.z = c.gz; });
+  const GAP = CELL * .9, items = [], W = new Map();
+  cities.forEach(c => { const t = TOT(c); if (!t) return;
+    const h = (radiusOf(Math.min(NS, t)) + .8) * CELL + GAP / 2;
+    items.push({ c, ox:0, oz:0, hx:h, hz:h }); W.set(c.i, Math.min(NS, t) + (c.cap ? 40 : 0) + 1); });
+  LANDMARKS.forEach(lm => { const c = cities[lm.ci], t = TOT(c); if (!W.has(c.i)) W.set(c.i, 1e9);   // cidade vazia: o ponto turístico fica fixo
+    // ponto turístico ao lado da cidade: quando a cidade cresce, ele é empurrado para fora do bairro
+    lm.dx = lm.dz = 0;
+    if (Math.hypot(lm.ox, lm.oz) > .2) { const ch = (radiusOf(Math.min(NS, t)) + .8) * CELL;
+      if (Math.abs(lm.bx) >= Math.abs(lm.bz)) { const need = ch + lm.hx + GAP; if (Math.abs(lm.bx) < need) lm.dx = Math.sign(lm.bx) * need - lm.bx; }
+      else { const need = ch + lm.hz + GAP; if (Math.abs(lm.bz) < need) lm.dz = Math.sign(lm.bz) * need - lm.bz; } }
+    items.push({ c, ox:lm.bx + lm.dx, oz:lm.bz + lm.dz, hx:lm.hx + GAP / 2, hz:lm.hz + GAP / 2 }); });
+  if (items.length > 1) {
+    const G = 3, key = (x, z) => Math.floor(x / G) + ',' + Math.floor(z / G);
+    for (let it = 0; it < 80; it++) {
+      const grid = new Map(); let moved = false;
+      items.forEach((a, n) => { const x0 = Math.floor((a.c.x + a.ox - a.hx) / G), x1 = Math.floor((a.c.x + a.ox + a.hx) / G), z0 = Math.floor((a.c.z + a.oz - a.hz) / G), z1 = Math.floor((a.c.z + a.oz + a.hz) / G);
+        for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) { const k = x + ',' + z; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(n); } });
+      const seen = new Set();
+      grid.forEach(L => { for (let p = 0; p < L.length; p++) for (let q = p + 1; q < L.length; q++) {
+        const a = items[L[p]], b = items[L[q]]; if (a.c === b.c) continue;
+        const pk = L[p] < L[q] ? L[p] * 1e5 + L[q] : L[q] * 1e5 + L[p]; if (seen.has(pk)) continue; seen.add(pk);
+        const dx = (b.c.x + b.ox) - (a.c.x + a.ox), dz = (b.c.z + b.oz) - (a.c.z + a.oz);
+        const px = a.hx + b.hx - Math.abs(dx), pz = a.hz + b.hz - Math.abs(dz);
+        if (px <= 0 || pz <= 0) continue;
+        const wa = W.get(a.c.i), wb = W.get(b.c.i), fa = wb / (wa + wb), fb = wa / (wa + wb);
+        if (px < pz) { const s = (dx >= 0 ? 1 : -1) * (px + .001); a.c.x -= s * fa; b.c.x += s * fb; }
+        else { const s = (dz >= 0 ? 1 : -1) * (pz + .001); a.c.z -= s * fa; b.c.z += s * fb; }
+        moved = true;
+      } });
+      if (!moved) break;
+    }
+  }
+  LANDMARKS.forEach(lm => { const c = cities[lm.ci], nx = c.x + lm.ox + lm.dx, nz = c.z + lm.oz + lm.dz;
+    if (lm.site) { lm.site.position.x += nx - lm.g.position.x; lm.site.position.z += nz - lm.g.position.z; }
+    lm.g.position.x = nx; lm.g.position.z = nz; });
+}
+window.VSP_LM = { LANDMARKS, makeSite, updateLandmarks, addLandmark, cities, refresh: () => refresh() };
+function landmarkHtml(ci) {
+  return LANDMARKS.filter(lm => lm.ci === ci).map(lm => { const { n, done } = landmarkProgress(lm);
+    return done ? `<p class="note">🏛️ ${html(lm.name)} · inaugurado</p>`
+      : `<div class="sec"><h3>🚧 ${html(lm.name)} em obra</h3><div class="bar"><i class="b" style="width:${Math.min(100, n / lm.need * 100)}%;background:#ffc93c"></i></div><span class="note">${n}/${lm.need} moradores · a obra termina quando a cidade chegar a ${lm.need} moradores. Chame seus amigos!</span></div>`; }).join('');
+}
 const treeIM = new THREE.InstancedMesh(TREE_GEO, treeMat, TREES.length);
 treeIM.frustumCulled = false; treeIM.castShadow = true; treeIM.receiveShadow = true; scene.add(treeIM);
 function updateTrees() {
@@ -904,7 +1022,7 @@ function updateTrees() {
       const l = B.get((bx + dx) + ',' + (bz + dz)); if (!l) continue;
       for (const c of l) { const R = ((c.rad || 2) + 1.6) * CELL + t.s * .5; if (Math.abs(t.x - c.x) < R && Math.abs(t.z - c.z) < R) { hidden = true; break; } }
     }
-    if (Math.hypot(t.x - CRISTO.position.x, t.z - CRISTO.position.z) < .5) hidden = true;
+    if (LANDMARKS.some(lm => Math.hypot(t.x - lm.g.position.x, t.z - lm.g.position.z) < .5)) hidden = true;
 
     qy.setFromAxisAngle(up, t.ry);
     m4.compose(p4.set(t.x, TOP, t.z), qy, s4.setScalar(hidden ? 0 : t.s)); treeIM.setMatrixAt(i, m4);
@@ -1340,6 +1458,7 @@ function renderPanel() {
       <div><h3>Prefeito</h3>${off.pref ? `<button class="pp go" data-h="${html(off.pref[0])}"><span class="dot ${players[off.pref[0]].side}"></span>${html(showH(off.pref[0]))} · ${off.pref[1]} pts${off.pref[0] === cities[sel].f ? ' · fundador' : ''}</button>` : '<span class="note">Vago. O fundador vira prefeito; depois, quem tiver mais alianças aceitas assume.</span>'}</div>
       <div><h3>Câmara · 10 vagas</h3><div class="camara">${Array.from({ length:10 }, (_, k) => off.ver[k] ? `<button class="dot ${players[off.ver[k][0]].side} seat" data-h="${html(off.ver[k][0])}" title="${html(showH(off.ver[k][0]))} · ${off.ver[k][1]} pts" aria-label="Vereador ${html(showH(off.ver[k][0]))}"></button>` : '<span class="dot empty" title="Vaga"></span>').join('')}</div><span class="note">${off.ver.length}/10 · os que mais pontuam depois do prefeito</span></div>
     </div>
+    ${landmarkHtml(sel)}
     ${playersHere(sel)}
     <p class="note">Para ganhar uma casa aqui, comente no post de @vouserpresidente "${html(c.name)}${NAME_IDX.get(c.k).length > 1 ? ' - ' + c.uf : ''} 🔵" ou "🔴" no post oficial. 1 casa por @ em cada cidade. PIB, aprovação e honestidade são de exemplo.</p>`;
   $('px').onclick = closePanel;
