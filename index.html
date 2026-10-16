@@ -414,18 +414,23 @@ const BIO = {
   pampa:['#9cc76a','#a9d178','#93bf62']
 };
 function makeTerrain() {
-  const TW = 2048, C = 8, cv = document.createElement('canvas'); cv.width = cv.height = TW;
+  const TW = LOWQ ? 1024 : 2048, C = LOWQ ? 4 : 8, cv = document.createElement('canvas'); cv.width = cv.height = TW;
   const ctx = cv.getContext('2d');
   const toPx = (lon, lat) => [((lon + OX) * S - minX) / span * TW, TW - ((lat + OZ) * S - minY) / span * TW];
   const toLL = (px, py) => [(minX + px / TW * span) / S - OX, (minY + (TW - py) / TW * span) / S - OZ];
   const ring = pts => { ctx.beginPath(); pts.forEach(([lon, lat], i) => { const [x, y] = toPx(lon, lat); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); };
   ctx.fillStyle = '#efe2b3'; ctx.fillRect(0, 0, TW, TW);
-  ctx.save(); ring(BR); ctx.clip();
-  for (let py = 0; py < TW; py += C) for (let px = 0; px < TW; px += C) {
-    const [lon, lat] = toLL(px + C / 2, py + C / 2), pal = BIO[biome(lon, lat)];
-    const v = vnoise(px * .025, py * .025) * .6 + hash(px, py) * .4;
-    ctx.fillStyle = pal[Math.floor(v * pal.length) % pal.length]; ctx.fillRect(px, py, C, C);
+  // pixels de bioma desenhados de uma vez (ImageData) — muito mais rápido que milhares de fillRect
+  const G = TW / C, img = ctx.createImageData(G, G), hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const BIOC = {}; for (const k in BIO) BIOC[k] = BIO[k].map(hex);
+  for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) {
+    const px = gx * C, py = gy * C, [lon, lat] = toLL(px + C / 2, py + C / 2), pal = BIOC[biome(lon, lat)];
+    const v = vnoise(px * .025, py * .025) * .6 + hash(px, py) * .4, c = pal[Math.floor(v * pal.length) % pal.length], o = (gy * G + gx) * 4;
+    img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
   }
+  const small = document.createElement('canvas'); small.width = small.height = G; small.getContext('2d').putImageData(img, 0, 0);
+  ctx.save(); ring(BR); ctx.clip();
+  ctx.imageSmoothingEnabled = false; ctx.drawImage(small, 0, 0, TW, TW);
   for (let i = 0; i < 18000; i++) {
     const px = hash(i, 7) * TW, py = hash(i, 13) * TW, [lon, lat] = toLL(px, py), bm = biome(lon, lat);
     if (bm === 'pantanal' && i % 3 === 0) {
