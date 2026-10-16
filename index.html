@@ -824,6 +824,7 @@ function rebuildAll() {
   lastDotD = -1;
   updateTrees();
   updateLandmarks();
+  if (typeof updateFans === 'function') updateFans();
   if (sel >= 0) placeRing();
 }
 const treeMat = new THREE.MeshLambertMaterial({ vertexColors:true });
@@ -1003,11 +1004,149 @@ function spreadCities() {
     if (lm.site) { lm.site.position.x += nx - lm.g.position.x; lm.site.position.z += nz - lm.g.position.z; }
     lm.g.position.x = nx; lm.g.position.z = nz; });
 }
-window.VSP_LM = { LANDMARKS, makeSite, updateLandmarks, addLandmark, cities, refresh: () => refresh(), _t: () => ({ parseSide, matchCity, applyImport, parseComments, players, key }) };
+// ---------- Maracanã: novo ponto turístico do Rio (em obra até 100 moradores) com a arquibancada dos torcedores ----------
+// Cores das camisas (só as cores — sem escudos). [nome, camisa, calção, apelidos...]
+const TEAMS = {
+  flamengo:['Flamengo', '#c8102e', '#111111', 'mengao', 'mengo', 'fla'], fluminense:['Fluminense', '#7a1f3d', '#0b6e3a', 'flu', 'nense'],
+  vasco:['Vasco', '#111111', '#ffffff', 'vascao', 'vasco da gama'], botafogo:['Botafogo', '#111111', '#ffffff', 'fogao', 'glorioso'],
+  corinthians:['Corinthians', '#ffffff', '#111111', 'timao', 'corintians', 'curintia'], palmeiras:['Palmeiras', '#0a6b2f', '#ffffff', 'verdao', 'porco'],
+  saopaulo:['São Paulo', '#ffffff', '#d10a11', 'spfc', 'tricolor paulista', 'sao paulo fc'], santos:['Santos', '#ffffff', '#111111', 'peixe', 'santos fc'],
+  gremio:['Grêmio', '#4aa3df', '#111111', 'tricolor gaucho', 'imortal'], internacional:['Internacional', '#d0021b', '#ffffff', 'inter', 'colorado'],
+  cruzeiro:['Cruzeiro', '#1b3fa0', '#ffffff', 'raposa', 'cabuloso'], atleticomg:['Atlético-MG', '#111111', '#ffffff', 'galo', 'atletico mineiro', 'atletico mg', 'atletico-mg'],
+  bahia:['Bahia', '#0057b8', '#d0021b', 'esquadrao', 'bahea'], vitoria:['Vitória', '#d0021b', '#111111', 'leao da barra', 'ec vitoria'],
+  sport:['Sport', '#d0021b', '#111111', 'sport recife', 'leao da ilha'], fortaleza:['Fortaleza', '#1c4fa1', '#d0021b', 'leao do pici', 'fortaleza ec'],
+  ceara:['Ceará', '#111111', '#ffffff', 'vozao', 'ceara sc'], athletico:['Athletico-PR', '#d0021b', '#111111', 'athletico', 'furacao', 'athletico paranaense', 'athletico pr', 'atletico paranaense', 'cap'],
+  coritiba:['Coritiba', '#0b6e3a', '#ffffff', 'coxa'], goias:['Goiás', '#0b6e3a', '#ffffff', 'esmeraldino', 'goias ec'],
+  atleticogo:['Atlético-GO', '#d0021b', '#111111', 'dragao', 'atletico goianiense', 'atletico go'], bragantino:['Bragantino', '#ffffff', '#d0021b', 'red bull bragantino', 'massa bruta'],
+  cuiaba:['Cuiabá', '#0b6e3a', '#ffd200', 'dourado', 'cuiaba ec'], juventude:['Juventude', '#0b6e3a', '#ffffff', 'ju'],
+  americamg:['América-MG', '#0b6e3a', '#111111', 'coelho', 'america mineiro', 'america mg'], chapecoense:['Chapecoense', '#0b6e3a', '#ffffff', 'chape'],
+  avai:['Avaí', '#1c4fa1', '#ffffff', 'leao da ilha sc'], figueirense:['Figueirense', '#111111', '#ffffff', 'figueira'],
+  criciuma:['Criciúma', '#ffd200', '#111111', 'tigre'], nautico:['Náutico', '#d0021b', '#ffffff', 'timbu'], santacruz:['Santa Cruz', '#111111', '#d0021b', 'cobra coral', 'santinha'],
+  paysandu:['Paysandu', '#5ab4e5', '#ffffff', 'papao'], remo:['Remo', '#0b2a6b', '#ffffff', 'leao azul', 'clube do remo'],
+  pontepreta:['Ponte Preta', '#ffffff', '#111111', 'macaca'], guarani:['Guarani', '#0b6e3a', '#ffffff', 'bugre'], abc:['ABC', '#ffffff', '#111111'],
+  crb:['CRB', '#d0021b', '#ffffff', 'galo de campina'], csa:['CSA', '#1c4fa1', '#ffffff', 'azulao'], vilanova:['Vila Nova', '#d0021b', '#ffffff', 'tigrao'],
+};
+// apelido → time (os mais longos primeiro para "atletico mineiro" ganhar de "atletico")
+const TEAM_ALIAS = [];
+Object.entries(TEAMS).forEach(([id, t]) => [key(t[0]), id, ...t.slice(3)].forEach(a => TEAM_ALIAS.push([key(a), id])));
+TEAM_ALIAS.sort((a, b) => b[0].length - a[0].length);
+const STATE_WORDS = new Set(Object.values(STATE).map(n => key(n)));
+// nomes que também são cidade/estado (ex.: Santos, Bahia, Fortaleza) só contam como time com dica: ⚽, "time", "torço", "torcedor"...
+function parseTeam(raw) {
+  const t = ' ' + key(raw.replace(/@[\w.]+/g, ' ')) + ' ';
+  const hint = /⚽/.test(raw) || / (time|torco|torcedor|torcedora|torcida|sou do|sou da|meu time|clube|futebol) /.test(t);
+  for (const [a, id] of TEAM_ALIAS) {
+    if (a.length < 3 && !hint) continue;
+    const at = t.indexOf(' ' + a + ' '); if (at < 0) continue;
+    const after = t.slice(at + a.length + 2).trim().split(' ')[0] || '';
+    if (UFSET.has(after) && NAME_IDX.has(a)) continue;                       // "Santos SP" = cidade
+    const isPlace = NAME_IDX.has(a) || STATE_WORDS.has(a);
+    if (isPlace && !hint && a !== 'palmeiras' && a !== 'cruzeiro') continue;
+    const rest = (t.slice(0, at) + ' ' + t.slice(at + a.length + 2)).replace(/ (time|torco|torcedor|torcedora|torcida|sou|do|da|meu|clube|futebol) /g, ' ').trim();
+    return { id, rest };
+  }
+  return null;
+}
+const MARA = (() => {
+  const rio = cities[capOf.RJ], g = new THREE.Group();
+  const wht = toon('#f1efe9'), wht2 = toon('#d9d6ce'), grey = toon('#aeb3bd'), grass = toon('#3fa34d'), grass2 = toon('#36913f'), line = toon('#ffffff'), roofM = toon('#e6e3dc');
+  const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+  const A = .56, B = .45, H = .17;
+  add(new THREE.CylinderGeometry(1, 1, .02, 48), wht2, 0, .01, 0, A + .14, 1, B + .14);                                  // esplanada
+  const facade = new THREE.CylinderGeometry(1, 1, H, 64, 1, true); facade.translate(0, H / 2, 0);
+  const fm = add(facade, wht, 0, .02, 0, A, 1, B); fm.material = toon('#f1efe9', { side:THREE.DoubleSide });
+  // pilares da fachada
+  const pil = new THREE.BoxGeometry(.016, H + .01, .03);
+  for (let i = 0; i < 56; i++) { const a = i / 56 * Math.PI * 2, x = Math.cos(a) * A * 1.03, z = Math.sin(a) * B * 1.03; add(pil, wht2, x, .02 + H / 2, z, 1, 1, 1, -Math.atan2(z / (B * B), x / (A * A))); }
+  // anel da cobertura
+  const roof = new THREE.RingGeometry(.74, 1.06, 64, 1); roof.rotateX(-Math.PI / 2);
+  const rm = add(roof, roofM, 0, .02 + H + .004, 0, A, 1, B); rm.material = toon('#e6e3dc', { side:THREE.DoubleSide });
+  // arquibancada (tronco de cone visto por dentro)
+  const bowl = new THREE.CylinderGeometry(.95, .6, H * .92, 64, 1, true); bowl.translate(0, .02 + H * .46, 0);
+  const bm = add(bowl, grey, 0, 0, 0, A, 1, B); bm.material = toon('#aeb3bd', { side:THREE.DoubleSide });
+  // campo
+  add(new THREE.CylinderGeometry(1, 1, .01, 48), grass2, 0, .025, 0, A * .62, 1, B * .62);
+  add(new THREE.BoxGeometry(.42, .006, .26), grass, 0, .032, 0);
+  [[0, 0, .004, .26], [.205, 0, .004, .26], [-.205, 0, .004, .26], [0, .127, .414, .004], [0, -.127, .414, .004], [.18, 0, .05, .11], [-.18, 0, .05, .11]]
+    .forEach(([x, z, w, d]) => add(new THREE.BoxGeometry(w, .003, d), line, x, .037, z));
+  const circ = new THREE.RingGeometry(.035, .041, 24); circ.rotateX(-Math.PI / 2); add(circ, line, 0, .037, 0);
+  // rampas laterais (como na foto)
+  add(new THREE.BoxGeometry(.3, .03, .06), wht2, A + .12, .05, .08, 1, 1, 1, .5);
+  add(new THREE.BoxGeometry(.3, .03, .06), wht2, -A - .1, .05, -.06, 1, 1, 1, .5);
+  // torcedores: bonecos instanciados (camisa, calção, cabeça)
+  const CAP = 520, s = .03;
+  const mk = (geo, col) => { const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color:'#ffffff' }), CAP); if (col) m.setColorAt(0, new THREE.Color(col)); m.count = 0; m.castShadow = false; m.frustumCulled = false; g.add(m); return m; };
+  const torso = new THREE.BoxGeometry(.5 * s, .42 * s, .3 * s); torso.translate(0, .62 * s, 0);
+  const shorts = new THREE.BoxGeometry(.52 * s, .22 * s, .5 * s); shorts.translate(0, .32 * s, .08 * s);
+  const head = new THREE.SphereGeometry(.18 * s, 8, 6); head.translate(0, 1.0 * s, 0);
+  const IT = mk(torso, '#fff'), IS = mk(shorts, '#fff'), IH = mk(head, '#fff');
+  // cadeiras: fileiras ao longo do anel da arquibancada
+  const SEATS = [];
+  const R = 6, y0 = .02 + H * .1, y1 = .02 + H * .86;
+  for (let r = 0; r < R; r++) {
+    const f = (r + .5) / R, rf = (.6 + .35 * f) * .985, y = y0 + (y1 - y0) * f, a = A * rf, b = B * rf;
+    const per = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b))), n = Math.floor(per / (s * .72));
+    for (let i = 0; i < n; i++) { const th = -Math.PI / 2 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) / n * Math.PI * 2; SEATS.push([Math.cos(th) * a, y, Math.sin(th) * b, r]); }
+  }
+  g.position.set(rio.x - .1, TOP, rio.z - 1.25);
+  scene.add(g);
+  return { g, IT, IS, IH, SEATS, CAP, s };
+})();
+const SKIN = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'].map(c => new THREE.Color(c));
+let FANS = [];
+function updateFans() {
+  FANS = Object.entries(players).filter(([, p]) => p.time && TEAMS[p.time]).sort((a, b) => (a[1].tt || 0) - (b[1].tt || 0)).slice(0, Math.min(MARA.CAP, MARA.SEATS.length));
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), c1 = new THREE.Color(), c2 = new THREE.Color();
+  FANS.forEach(([h, pl], i) => {
+    const [x, y, z] = MARA.SEATS[i]; q.setFromAxisAngle(up, Math.atan2(-x, -z)); p.set(x, y, z); m.compose(p, q, sc);
+    [MARA.IT, MARA.IS, MARA.IH].forEach(im => im.setMatrixAt(i, m));
+    const t = TEAMS[pl.time]; MARA.IT.setColorAt(i, c1.set(t[1])); MARA.IS.setColorAt(i, c2.set(t[2])); MARA.IH.setColorAt(i, SKIN[Math.floor(hash(i, 7) * SKIN.length)]);
+  });
+  [MARA.IT, MARA.IS, MARA.IH].forEach(im => { im.count = FANS.length; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; });
+}
+const MARA_LM = addLandmark(capOf.RJ, 'Maracanã', MARA.g);
+MARA_LM.fans = true;
+// etiquetas com o @ dos torcedores quando a câmera chega perto do estádio
+const fanLabs = [], FANLAB_N = 28; let fanSel = null;
+{ const st = document.createElement('style'); st.textContent = `.flab{position:absolute;transform:translate(-50%,-100%);background:var(--paper,#fff);border:2px solid var(--ink,#111);border-radius:99px;padding:1px 7px 1px 4px;font:800 10px Nunito,system-ui,sans-serif;white-space:nowrap;display:flex;gap:4px;align-items:center;cursor:pointer;pointer-events:auto}.flab i{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--ink,#111)}.flab.sel{background:var(--sun,#ffc93c);font-size:13px;z-index:3}`; document.head.appendChild(st); }
+function initFanLabs() { for (let i = 0; i < FANLAB_N; i++) { const el = document.createElement('div'); el.className = 'flab'; el.hidden = true; el.onclick = () => { if (el.h) openProfile(el.h); }; labelsEl.appendChild(el); fanLabs.push(el); } }
+const fv = new THREE.Vector3();
+function fanWorld(i, out) { const [x, y, z] = MARA.SEATS[i]; return MARA.g.localToWorld(out.set(x, y + MARA.s * 1.3, z)); }
+function drawFanLabels(d) {
+  if (!fanLabs.length) initFanLabs();
+  const near = d < 2.6 && controls.target.distanceTo(MARA.g.position) < 1.6 && !(MARA_LM.obra && MARA_LM.site && MARA_LM.site.visible && MARA_LM.lastN < 15);
+  const L = [];
+  if (near && FANS.length) {
+    const W = canvas.clientWidth, Hh = canvas.clientHeight, camP = camera.position;
+    const cdx = camP.x - MARA.g.position.x, cdz = camP.z - MARA.g.position.z, cl = Math.hypot(cdx, cdz) || 1;
+    FANS.forEach(([h, pl], i) => { const S = MARA.SEATS[i], sl = Math.hypot(S[0], S[2]) || 1; if (fanSel !== h && (S[0] * cdx + S[2] * cdz) / (sl * cl) > .15) return; fanWorld(i, fv); const dist = fv.distanceTo(camP); fv.project(camera); if (fv.z > 1 || Math.abs(fv.x) > .95 || Math.abs(fv.y) > .95) return; if (fanSel !== h && MARA_LM.plane && fanWorld(i, new THREE.Vector3()).y > MARA_LM.plane.constant) return; L.push([dist - (fanSel === h ? 99 : 0), h, pl, (fv.x + 1) / 2 * W, (1 - fv.y) / 2 * Hh]); });
+    L.sort((a, b) => a[0] - b[0]);
+    const keep = []; for (const x of L) { if (keep.length >= FANLAB_N) break; if (keep.every(y => Math.abs(y[3] - x[3]) > 95 || Math.abs(y[4] - x[4]) > 20)) keep.push(x); }
+    L.length = 0; L.push(...keep);
+  }
+  fanLabs.forEach((el, k) => {
+    const x = L[k]; if (!x) { el.hidden = true; return; }
+    const [, h, pl, sx, sy] = x, t = TEAMS[pl.time], key2 = h + pl.time;
+    if (el._k !== key2) { el._k = key2; el.h = h; el.innerHTML = `<i style="background:${t[1]}"></i>${html(showH(h))}`; el.title = `${showH(h)} · ${t[0]}`; }
+    el.classList.toggle('sel', fanSel === h); el.hidden = false; el.style.left = sx + 'px'; el.style.top = sy + 'px';
+  });
+}
+function goToFan(h) {
+  const i = FANS.findIndex(x => x[0] === h); if (i < 0) return false;
+  fanSel = h; fanWorld(i, fv); flyTo(fv.clone(), 1.1); return true;
+}
+function fansHtml() {
+  if (!FANS.length) return `<p class="note">⚽ Ninguém na arquibancada ainda. Comente o nome do seu time no post para ganhar sua cadeira no Maracanã!</p>`;
+  const cnt = {}; FANS.forEach(([, p]) => cnt[p.time] = (cnt[p.time] || 0) + 1);
+  const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  return `<div class="sec"><h3>⚽ Arquibancada do Maracanã · ${FANS.length} torcedor(es)</h3><div class="ppl">${top.map(([id, n]) => `<span class="pp"><span class="dot" style="background:${TEAMS[id][1]};border:2px solid var(--ink)"></span>${html(TEAMS[id][0])} · ${n}</span>`).join('')}</div><span class="note">Comente o nome do seu time para ganhar sua cadeira, com um boneco nas cores dele e o seu @. Dê zoom no estádio para ver.</span></div>`;
+}
+window.VSP_LM = { camTo(v, d, tilt = .9, az = .4) { focus = null; controls.target.copy(v); camera.position.set(v.x + Math.sin(az) * Math.sin(tilt) * d, v.y + Math.cos(tilt) * d, v.z + Math.cos(az) * Math.sin(tilt) * d); }, MARA, FANS:() => FANS, goToFan, parseTeam, LANDMARKS, makeSite, updateLandmarks, addLandmark, cities, refresh: () => refresh(), _t: () => ({ parseSide, matchCity, applyImport, parseComments, players, key }) };
 function landmarkHtml(ci) {
   return LANDMARKS.filter(lm => lm.ci === ci).map(lm => { const { n, done } = landmarkProgress(lm);
-    return done ? `<p class="note">🏛️ ${html(lm.name)} · inaugurado</p>`
-      : `<div class="sec"><h3>🚧 ${html(lm.name)} em obra</h3><div class="bar"><i class="b" style="width:${Math.min(100, n / lm.need * 100)}%;background:#ffc93c"></i></div><span class="note">${n}/${lm.need} moradores · a obra termina quando a cidade chegar a ${lm.need} moradores. Chame seus amigos!</span></div>`; }).join('');
+    const fx = lm.fans ? fansHtml() : '';
+    return fx + (done ? `<p class="note">🏛️ ${html(lm.name)} · inaugurado</p>`
+      : `<div class="sec"><h3>🚧 ${html(lm.name)} em obra</h3><div class="bar"><i class="b" style="width:${Math.min(100, n / lm.need * 100)}%;background:#ffc93c"></i></div><span class="note">${n}/${lm.need} moradores · a obra termina quando a cidade chegar a ${lm.need} moradores. Chame seus amigos!</span></div>`); }).join('');
 }
 const treeIM = new THREE.InstancedMesh(TREE_GEO, treeMat, TREES.length);
 treeIM.frustumCulled = false; treeIM.castShadow = true; treeIM.receiveShadow = true; scene.add(treeIM);
@@ -1249,7 +1388,7 @@ function loop(t) {
   if (dirty) { HM.forEach(m => m.instanceMatrix.needsUpdate = true); flagIM.instanceMatrix.needsUpdate = true; }
   if (!RM) clouds.forEach((g, i) => { g.position.x += .01 + i * .0015; if (g.position.x > minX + span + 15) g.position.x = minX - 15; });
   updateTraffic(t, d);
-  drawLabels(d); drawHouseLabel();
+  drawLabels(d); drawHouseLabel(); drawFanLabels(d);
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
@@ -1516,7 +1655,7 @@ function openProfile(h) {
     <div class="prof">
       <div class="ph">${lvImg(lv)}<div><h2><a class="plink" href="${igUrl(h)}" target="_blank" rel="noopener" title="Abrir no Instagram">${html(showH(h))}</a></h2>
         <div class="phs">${p.side ? `<span class="badge ${p.side}">${sideEmo(p.side)} ${sideName(p.side)}</span>` : '<span class="badge n">sem lado</span>'}
-        <span class="badge n">Nv ${lv} · ${L.name}</span>${rk ? `<span class="badge n">#${rk[0]} de ${fmt(rk[1])}</span>` : ''}${kingOf.map(uf => `<span class="badge n">👑 rei de ${uf}</span>`).join('')}</div></div></div>
+        <span class="badge n">Nv ${lv} · ${L.name}</span>${p.time && TEAMS[p.time] ? `<span class="badge n" style="border-color:${TEAMS[p.time][1]}">⚽ ${html(TEAMS[p.time][0])}</span>` : ''}${rk ? `<span class="badge n">#${rk[0]} de ${fmt(rk[1])}</span>` : ''}${kingOf.map(uf => `<span class="badge n">👑 rei de ${uf}</span>`).join('')}</div></div></div>
       <div class="mrow" style="margin-top:12px">${igLink(h)}<button class="chip y" id="supBtn">👍 apoiar ${html(showH(h))}</button></div>
       <div class="sec"><div class="split"><span>${sc} pts</span><span>${N ? `faltam ${N.min - sc} para Nv ${N.n} · ${N.name}` : 'nível máximo'}</span></div><div class="meter" style="height:12px;border:2px solid var(--ink)"><i style="width:${prog}%;background:var(--sun)"></i></div></div>
       <div class="tiles">
@@ -1616,7 +1755,7 @@ function parseSide(raw, t) {
 function searchItems(q) {
   const t = norm(q).trim(), h = t.replace(/^@/, ''), hk = key(h), out = [];
   if (!hk) return out;
-  if (t.length >= 2) Object.entries(players).forEach(([k, p]) => { if (p.casas.length && k.includes(h)) out.push({ type:'@', h:k, p }); });
+  if (t.length >= 2) Object.entries(players).forEach(([k, p]) => { if ((p.casas.length || p.time) && k.includes(h)) out.push({ type:'@', h:k, p }); });
   if (!t.startsWith('@')) {
     Object.entries(STATE).forEach(([uf, name]) => { if (key(name).startsWith(hk) || uf.toLowerCase() === hk) out.push({ type:'state', i:capOf[uf] }); });
     const cs = [];
@@ -1632,6 +1771,7 @@ function goTo(item) {
   if (item.type === '@') {
     const ci = item.p.casas[0];
     if (ci !== undefined) { select(ci, item.h); picked = { ci, h:item.h }; popHandle(ci, item.h, 3); }
+    else if (item.p.time) goToFan(item.h);
     openProfile(item.h);
   } else select(item.i);
 }
@@ -1716,7 +1856,11 @@ function applyImport(entries, reset) {
     }
     const sm = full.match(/(^|[^a-z])(apoio|apoiado|apoiando|apoiei|voto em|voto no|voto na|meu voto (e|eh|vai pra|vai para|pro|pra|para))\s*@([a-z0-9._]{2,30})/);
     if (sm) { const k = /prefeit/.test(t) ? 'pref' : /governad/.test(t) ? 'gov' : 'pres', r = applySupport(e.user, sm[4], k); if (r === 'ok') { rep.sups.push([e.user, sm[4], k]); act(e, `👍 +2 para @${sm[4]} (${KIND[k].toLowerCase()})`); } else ign(e, r); continue; }
-    const mc = matchCity(raw), side0 = parseSide(raw, mc ? (' ' + key(t) + ' ').replace(' ' + mc.k + ' ', ' ') : t);  // o nome da cidade não conta como lado (ex.: Rio Branco, Céu Azul)
+    // time do coração → cadeira na arquibancada do Maracanã (o nome do time não conta como cidade nem lado)
+    const tm = parseTeam(raw);
+    if (tm) { const q = players[e.user] || (players[e.user] = newP()); if (q.time !== tm.id) { const first = !q.time; q.time = tm.id; if (first) q.tt = Date.now() + (arrivalSeq++); rep.users.add(e.user); act(e, `⚽ ${first ? 'cadeira no Maracanã' : 'trocou de time'}: ${TEAMS[tm.id][0]}`); } else act(e, `⚽ já torce pelo ${TEAMS[tm.id][0]}`); }
+    const cityTxt = tm ? tm.rest : raw, tS = tm ? tm.rest : t;
+    const mc = matchCity(cityTxt), side0 = parseSide(raw, mc ? (' ' + key(tS) + ' ').replace(' ' + mc.k + ' ', ' ') : tS);  // o nome da cidade não conta como lado (ex.: Rio Branco, Céu Azul)
     const mentions = [...new Set((full.match(/@[a-z0-9._]{2,30}/g) || []).map(x => x.slice(1)))].filter(x => x !== e.user && x !== 'vouserpresidente');
     // pedidos de bônus (o dono confirma depois) e amigos marcados
     const wantsF = /(^|[^a-z])(segui|sigo|seguindo|ja sigo|to seguindo|estou seguindo)([^a-z]|$)/.test(t);
@@ -1733,11 +1877,11 @@ function applyImport(entries, reset) {
       if (!q.side || (q.side === 'n' && q.autoN && side0 !== 'n')) { setSide(q, side0); rep.users.add(e.user); act(e, `lado registrado: ${sideEmo(side0)} ${sideName(side0)}${q.casas.length ? '' : ' (falta comentar a cidade para ganhar a casa)'}`); }
       else if (q.side !== side0) ign(e, `já joga pela ${sideName(q.side)}`);
       else act(e, `lado ${sideEmo(side0)} já registrado`);
-      const rest = t.replace(/[^a-z ]/g, ' ').replace(/(^|\s)(sou|de|da|do|e|a|o|time|lado|eu|voto|pela|pelo|na|no|com|meu|minha|sem|nenhum|direita|direitista|direito|esquerda|esquerdista|esquerdo|azul|vermelh[oa]|neutr[oa]|centro|branco|apartidari[oa])(?=\s|$)/g, ' ').trim();
+      const rest = tS.replace(/[^a-z ]/g, ' ').replace(/(^|\s)(sou|de|da|do|e|a|o|time|lado|eu|voto|pela|pelo|na|no|com|meu|minha|sem|nenhum|direita|direitista|direito|esquerda|esquerdista|esquerdo|azul|vermelh[oa]|neutr[oa]|centro|branco|apartidari[oa])(?=\s|$)/g, ' ').trim();
       if (rest.length >= 3 && !wantsF && !wantsS && !mentions.length) ign(e, 'cidade não reconhecida');
       continue;
     }
-    if (!mc && (wantsF || wantsS || mentions.length)) continue;
+    if (!mc && (wantsF || wantsS || mentions.length || tm)) continue;
     if (!mc) { if (side0 === 'x') ign(e, 'usou mais de um lado no mesmo comentário'); else rep.chatter++; continue; }
     if (mc.amb) { ign(e, ambMsg(mc.amb)); continue; }
     const ci = mc.ci;
