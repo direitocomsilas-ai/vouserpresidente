@@ -808,7 +808,7 @@ function rebuildAll() {
       m4.compose(p4.set(c.x, GY + .005, c.z + k * CELL), q4, s4.set(size, 1, CELL * .82)); roadIM.setMatrixAt(rc++, m4);
       m4.compose(p4.set(c.x + k * CELL, GY + .006, c.z), q4, s4.set(CELL * .82, 1, size)); roadIM.setMatrixAt(rc++, m4);
     }
-    m4.compose(p4.set(c.x, GY, c.z), q4, s4.set(1, 1, 1)); plazaIM.setMatrixAt(ac, m4);
+    m4.compose(p4.set(c.x, GY, c.z), q4, c.i === capOf.DF ? s4.set(0, 0, 0) : s4.set(1, 1, 1)); plazaIM.setMatrixAt(ac, m4);
     const ph = c.cap ? 1.1 : .7, off = .36, fs = c.cap ? 1 : .7;
     m4.compose(p4.set(c.x + off, GY + ph / 2, c.z - off), q4, s4.set(1, ph, 1)); poleIM.setMatrixAt(ac, m4);
     m4.compose(p4.set(c.x + off + .21 * fs, GY + ph - .13 * fs, c.z - off), q4, s4.set(fs, fs, fs)); cflagIM.setMatrixAt(ac, m4);
@@ -842,10 +842,10 @@ const CRISTO = (() => {
   const stone = toon('#e8e5df'), stoneD = toon('#c9c5bd'), hillM = toon('#4f9a45'), rockM = toon('#8c8a7e');
   const add = (geo, mat, x, y, z, rx = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; m.rotation.z = rz; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
   // morro (Corcovado)
-  add(new THREE.ConeGeometry(1.25, 1.1, 8), hillM, 0, .55, 0);
-  add(new THREE.ConeGeometry(.42, .38, 7), rockM, 0, 1.0, 0);
+  add(new THREE.ConeGeometry(.6, .5, 8), hillM, 0, .25, 0);
+  add(new THREE.ConeGeometry(.2, .18, 7), rockM, 0, .46, 0);
   // estátua (≈1 de altura) no topo
-  const S0 = 1.7, st = new THREE.Group(); st.position.set(0, 1.13, 0); g.add(st);
+  const S0 = .55, st = new THREE.Group(); st.position.set(0, .52, 0); g.add(st);
   const addS = (geo, mat, x, y, z, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x * S0, y * S0, z * S0); m.scale.setScalar(S0); m.rotation.z = rz; m.castShadow = true; st.add(m); return m; };
   addS(new THREE.CylinderGeometry(.2, .22, .08, 16), stoneD, 0, .04, 0);          // base
   addS(new THREE.BoxGeometry(.2, .2, .2), stoneD, 0, .18, 0);                     // pedestal
@@ -860,16 +860,16 @@ const CRISTO = (() => {
   addS(new THREE.CylinderGeometry(.04, .045, .05, 10), stone, 0, .965, 0);         // pescoço
   addS(new THREE.SphereGeometry(.065, 14, 10), stone, 0, 1.03, 0);                 // cabeça
   // ao lado da cidade, virado para o mar (sudeste do Rio fica à frente da câmera)
-  g.position.set(rio.x - 2.2, TOP, rio.z - .4);
+  g.position.set(rio.x - 1.5, TOP, rio.z - .3);
   scene.add(g);
   return g;
 })();
 // ---------- Congresso Nacional ao lado de Brasília ----------
 const CONGRESSO = (() => {
-  const bsb = cities[capOf.DF], g = new THREE.Group(), K = 1.15;
-  const wht = toon('#eeece8'), wht2 = toon('#d9d6d0'), lawn = toon('#7cc06a');
+  const bsb = cities[capOf.DF], g = new THREE.Group(), K = .36;
+  const wht = toon('#e9e6e0'), wht2 = toon('#c9c5bd'), lawn = toon('#7cc06a');
   const add = (geo, mat, x, y, z, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x * K, y * K, z * K); m.scale.setScalar(K); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
-  add(new THREE.BoxGeometry(3.4, .04, 2.2), lawn, 0, .02, 0);                         // gramado
+  add(new THREE.BoxGeometry(2.45, .05, 2.3), lawn, 0, .02, .05);                         // gramado da Esplanada
   add(new THREE.BoxGeometry(2.6, .12, .9), wht, 0, .1, 0);                              // plataforma
   add(new THREE.BoxGeometry(2.7, .03, 1.0), wht2, 0, .175, 0);                          // laje superior
   // cúpula do Senado (virada para cima)
@@ -886,7 +886,7 @@ const CONGRESSO = (() => {
   add(new THREE.BoxGeometry(.12, .04, .9), wht, -.2, .08, .9, .25);
   add(new THREE.BoxGeometry(.12, .04, .9), wht, 1.55, .08, 0, Math.PI / 2 + .3);
   add(new THREE.BoxGeometry(.12, .04, .7), wht, -1.55, .08, -.2, Math.PI / 2 - .3);
-  g.position.set(bsb.x + 4.0, TOP, bsb.z + .35);
+  g.position.set(bsb.x - .06, TOP + .03, bsb.z + .06);
   scene.add(g);
   return g;
 })();
@@ -903,8 +903,8 @@ function updateTrees() {
       const l = B.get((bx + dx) + ',' + (bz + dz)); if (!l) continue;
       for (const c of l) { const R = ((c.rad || 2) + 1.6) * CELL + t.s * .5; if (Math.abs(t.x - c.x) < R && Math.abs(t.z - c.z) < R) { hidden = true; break; } }
     }
-    if (Math.hypot(t.x - CRISTO.position.x, t.z - CRISTO.position.z) < 1.4) hidden = true;
-    if (Math.abs(t.x - CONGRESSO.position.x) < 2.3 && Math.abs(t.z - CONGRESSO.position.z) < 1.6) hidden = true;
+    if (Math.hypot(t.x - CRISTO.position.x, t.z - CRISTO.position.z) < .75) hidden = true;
+
     qy.setFromAxisAngle(up, t.ry);
     m4.compose(p4.set(t.x, TOP, t.z), qy, s4.setScalar(hidden ? 0 : t.s)); treeIM.setMatrixAt(i, m4);
   });
