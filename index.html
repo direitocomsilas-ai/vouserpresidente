@@ -309,7 +309,7 @@ function info(ci) {
 // ---------- Estado do jogo (embutido na página publicada) ----------
 const players = {};
 const credited = new Set();
-const newP = () => ({ side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], since:Date.now() });
+const newP = () => ({ side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], claims:[], tagged:[], since:Date.now() });
 const fixP = p => { const d = newP(); for (const k in d) if (p[k] === undefined) p[k] = d[k]; if (Array.isArray(p.shared)) p.shared = p.shared.length; return p; };
 const showH = h => '@' + h;
 const igUrl = h => 'https://www.instagram.com/' + encodeURIComponent(h) + '/';
@@ -1133,8 +1133,10 @@ function openProfile(h) {
       <div class="sec"><h3>Casas</h3><div class="ppl">${p.casas.length ? p.casas.map(ci => `<button class="pp go" data-ci="${ci}">🏠 ${cityTag(ci)}${cities[ci].f === h ? ' 🚩' : ''}</button>`).join('') : '<span class="note">Ainda sem casa.</span>'}</div></div>
       <div class="sec"><h3>Aliados</h3><div class="ppl">${p.allies.length ? p.allies.map(a => `<button class="pp go" data-h="${html(a)}">${players[a] ? lvImg(levelOf(players[a])) : ''}${html(showH(a))}</button>`).join('') : '<span class="note">Nenhum aliado ainda.</span>'}</div></div>
       ${p.reqOut.length ? `<div class="sec"><h3>Convites enviados, aguardando aceite</h3><div class="ppl">${p.reqOut.map(o => `<span class="pp">⏳ ${html(showH(o.to))} · ${html(cities[o.ci].name)}</span>`).join('')}</div></div>` : ''}
+      ${p.tagged.length ? `<div class="sec"><h3>Amigos que marcou (${p.tagged.length})</h3><div class="ppl">${p.tagged.map(a => `<button class="pp go" data-h="${html(a)}">${html(showH(a))}</button>`).join('')}</div></div>` : ''}
+      ${p.claims.length ? `<div class="sec"><h3>Esperando confirmação da página</h3><div class="ppl">${p.claims.map(c => `<span class="pp">⏳ ${c.kind === 'seguir' ? 'disse que seguiu' : 'disse que compartilhou'} · +3</span>`).join('')}</div></div>` : ''}
       ${ADMIN ? `<div class="sec"><h3>Bônus (só você vê)</h3><div class="ppl">
-        <button class="chip ${p.followed ? '' : 'y'}" style="font-size:14px" data-follow="1" ${p.followed ? 'disabled' : ''}>${p.followed ? 'seguiu a página ✓' : 'seguiu a página +5'}</button>
+        <button class="chip ${p.followed ? '' : 'y'}" style="font-size:14px" data-follow="1" ${p.followed ? 'disabled' : ''}>${p.followed ? 'seguiu a página ✓' : 'seguiu a página +3'}</button>
         <button class="chip y" style="font-size:14px" data-share="1">compartilhou +3${p.shared ? ` (${p.shared}×)` : ''}</button></div></div>` : ''}
     </div>`);
   const mc = $('mcard');
@@ -1142,8 +1144,8 @@ function openProfile(h) {
   mc.querySelectorAll('[data-dec]').forEach(b => b.onclick = () => { answerInvite(h, +b.dataset.dec, false); openProfile(h); });
   mc.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); const ci = +b.dataset.ci; select(ci, h); picked = { ci, h }; popHandle(ci, h, 3); });
   mc.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
-  mc.querySelectorAll('[data-follow]').forEach(b => b.onclick = () => { if (p.followed) return; p.followed = true; p.pts += 5; log(`${showH(h)} seguiu a página · +5 pts`); refresh(); save(); openProfile(h); });
-  mc.querySelectorAll('[data-share]').forEach(b => b.onclick = () => { p.shared = (p.shared || 0) + 1; p.pts += 3; log(`${showH(h)} compartilhou o jogo · +3 pts`); refresh(); save(); openProfile(h); });
+  mc.querySelectorAll('[data-follow]').forEach(b => b.onclick = () => { if (p.followed) return; p.followed = true; p.pts += 3; p.claims = p.claims.filter(c => c.kind !== 'seguir'); log(`${showH(h)} seguiu a página · +3 pts`); refresh(); save(); openProfile(h); });
+  mc.querySelectorAll('[data-share]').forEach(b => b.onclick = () => { { const i = p.claims.findIndex(c => c.kind === 'compartilhar'); if (i >= 0) p.claims.splice(i, 1); } p.shared = (p.shared || 0) + 1; p.pts += 3; log(`${showH(h)} compartilhou o jogo · +3 pts`); refresh(); save(); openProfile(h); });
 }
 
 // ---------- Reconhecer cidade (com UF), estado e lado ----------
@@ -1251,7 +1253,7 @@ function applyImport(entries, reset) {
     for (const k in players) delete players[k];
     credited.clear();
   }
-  const rep = { read:entries.length, casas:0, pts:0, dup:0, chatter:0, ign:[], users:new Set(), touched:new Map() };
+  const rep = { read:entries.length, casas:0, pts:0, dup:0, chatter:0, ign:[], users:new Set(), touched:new Map(), claims:[], tags:[] };
   const pend = [], accepts = [];
   rep.acc = 0;
   for (const e of entries) {
@@ -1262,7 +1264,17 @@ function applyImport(entries, reset) {
       continue;
     }
     const mc = matchCity(raw), side0 = parseSide(raw, t);
-    const mentions = [...new Set((full.match(/@[a-z0-9._]{2,30}/g) || []).map(x => x.slice(1)))].filter(x => x !== e.user);
+    const mentions = [...new Set((full.match(/@[a-z0-9._]{2,30}/g) || []).map(x => x.slice(1)))].filter(x => x !== e.user && x !== 'vouserpresidente');
+    // pedidos de bônus (o dono confirma depois) e amigos marcados
+    const wantsF = /(^|[^a-z])(segui|sigo|seguindo|ja sigo|to seguindo|estou seguindo)([^a-z]|$)/.test(t);
+    const wantsS = /(^|[^a-z])(compartilhei|compartilhado|repostei|divulguei|mandei pros amigos)([^a-z]|$)/.test(t);
+    if (wantsF || wantsS || mentions.length) {
+      const q = players[e.user] || (players[e.user] = newP());
+      if (wantsF && !q.followed && !q.claims.some(c => c.kind === 'seguir')) { q.claims.push({ kind:'seguir', t:Date.now() }); rep.claims.push([e.user, 'seguir']); }
+      if (wantsS && !q.claims.some(c => c.kind === 'compartilhar')) { q.claims.push({ kind:'compartilhar', t:Date.now() }); rep.claims.push([e.user, 'compartilhar']); }
+      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); rep.tags.push([e.user, m]); } });
+    }
+    if (!mc && (wantsF || wantsS || mentions.length)) continue;
     if (!mc) { if (side0) rep.ign.push([e.user, raw, 'cidade não reconhecida']); else rep.chatter++; continue; }
     if (mc.amb) { rep.ign.push([e.user, raw, ambMsg(mc.amb)]); continue; }
     const ci = mc.ci;
@@ -1359,6 +1371,7 @@ let DBV = 0; // versão da linha no banco
 function renderAdmin() {
   $('adminRow').hidden = !ADMIN; $('cImp').hidden = !ADMIN;
   if (!ADMIN) return;
+  const nC = pendingClaims().length; if ($('claimsBtn')) $('claimsBtn').textContent = `pedidos de pontos (${nC})`;
   $('pubBtn').disabled = !dirty;
   $('pubBtn').textContent = dirty ? 'publicar alterações' : 'tudo publicado ✓';
   $('pubState').textContent = dirty ? 'Há alterações que só você está vendo.' : 'O que você vê é o que todos veem.';
@@ -1423,6 +1436,7 @@ function openLogin() {
 }
 (() => {
   const row = $('adminRow');
+  const cb = document.createElement('button'); cb.className = 'chip'; cb.id = 'claimsBtn'; cb.style.cssText = 'font-size:15px;padding:5px 14px'; cb.onclick = openClaims; row.insertBefore(cb, row.querySelector('#pubBtn'));
   const out = document.createElement('button'); out.className = 'chip'; out.id = 'logoutBtn'; out.hidden = true;
   out.style.cssText = 'font-size:15px;padding:5px 14px'; out.textContent = 'sair';
   out.onclick = async () => { await sb.auth.signOut(); ADMIN = false; dirty = false; out.hidden = true; DBV = -1; await loadRemote(true); renderAdmin(); };
@@ -1474,10 +1488,61 @@ function runImport() {
     ${ign.length ? `<div class="tw"><table><thead><tr><th>Quem</th><th>Comentário</th><th>Por que não contou</th></tr></thead><tbody>
       ${ign.map(([u, c, w]) => `<tr><td>@${html(u)}</td><td>${html(c.slice(0, 60))}</td><td class="why">${html(w)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <p style="margin:10px 0 0">${rep.dup ? `${rep.dup} comentário(s) repetiram cidade onde a pessoa já tinha casa. ` : ''}${rep.chatter ? `${rep.chatter} comentário(s) sem cidade foram ignorados. ` : ''}${orphan ? `${orphan} linha(s) sem autor identificado.` : ''}</p>
+    ${rep.tags.length ? `<div class="sec"><h3>Quem marcou amigo (${rep.tags.length})</h3><div class="ppl">${rep.tags.slice(0, 60).map(([u, m]) => `<span class="pp">@${html(u)} → @${html(m)}</span>`).join('')}</div></div>` : ''}
+    ${claimsHTML()}
     <div class="mrow"><button class="chip" id="seeMap">ver no mapa antes</button><span class="grow"></span><button class="chip y" id="pubNow">publicar para todos</button></div>
     <p class="note">Por enquanto só você está vendo. Ao publicar, todo mundo que abrir o link vê o mapa novo.</p>`;
-  $('seeMap').onclick = closeModal; $('pubNow').onclick = publishAll;
+  $('seeMap').onclick = closeModal; $('pubNow').onclick = publishAll; wireClaims();
 }
+// ---------- Bônus de seguir/compartilhar: o dono confirma ----------
+function pendingClaims() { const out = []; for (const [h, p] of Object.entries(players)) (p.claims || []).forEach(c => out.push([h, c.kind])); return out; }
+function claimsHTML() {
+  const L = pendingClaims(); if (!L.length) return '';
+  return `<div class="sec" id="claimsBox"><h3>Pontos esperando sua confirmação (${L.length})</h3>
+    <p class="note" style="margin:0 0 6px">Confira no Instagram se a pessoa seguiu ou compartilhou mesmo. Cada confirmação vale +3 pontos.</p>
+    <div class="reqs">${L.map(([h, k]) => `<div class="req"><span><b>@${html(h)}</b> ${k === 'seguir' ? 'disse que seguiu a página' : 'disse que compartilhou'}</span><span class="ra"><a class="chip" style="font-size:14px;padding:4px 12px" href="${igUrl(h)}" target="_blank" rel="noopener">ver perfil</a><button class="chip y" data-cok="${html(h)}|${k}">confirmar +3</button><button class="chip" data-cno="${html(h)}|${k}">recusar</button></span></div>`).join('')}</div></div>`;
+}
+function decideClaim(h, k, ok) {
+  const p = players[h]; if (!p) return;
+  const i = p.claims.findIndex(c => c.kind === k); if (i < 0) return;
+  p.claims.splice(i, 1);
+  if (ok) {
+    if (k === 'seguir' && !p.followed) { p.followed = true; p.pts += 3; log(`${showH(h)} seguiu a página · +3 pts`); }
+    if (k === 'compartilhar') { p.shared = (p.shared || 0) + 1; p.pts += 3; log(`${showH(h)} compartilhou o jogo · +3 pts`); }
+  }
+  refresh(); save();
+}
+function wireClaims() {
+  const box = $('claimsBox'); if (!box) return;
+  box.querySelectorAll('[data-cok],[data-cno]').forEach(b => b.onclick = () => {
+    const [h, k] = (b.dataset.cok || b.dataset.cno).split('|'); decideClaim(h, k, !!b.dataset.cok);
+    const nb = document.createElement('div'); nb.innerHTML = claimsHTML(); box.replaceWith(nb.firstElementChild || document.createTextNode('')); wireClaims();
+    toast(b.dataset.cok ? '+3 pontos confirmados' : 'Pedido recusado');
+  });
+}
+function openClaims() {
+  if (!ADMIN) return;
+  const inner = claimsHTML();
+  openModal(`<h2>Pedidos de pontos</h2>${inner || '<p>Nenhum pedido esperando agora. Quando alguém comentar "segui ✅" ou "compartilhei" no post e você colar os comentários, aparece aqui.</p>'}
+    <div class="mrow"><span class="grow"></span><button class="chip y" id="claimsPub">publicar alterações</button></div>`);
+  wireClaims(); $('claimsPub').onclick = () => { closeModal(); publishAll(); };
+}
+// ---------- Botão "seguir": leva ao Instagram e explica como ganhar os pontos ----------
+$('cIg').addEventListener('click', e => {
+  e.preventDefault();
+  openModal(`<h2>Siga e ganhe +3 pontos</h2>
+    <ol class="rules" style="list-style:none">
+      <li><b>1</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> no Instagram.</span></li>
+      <li><b>2</b><span>No post do jogo, comente <b style="min-width:0">segui ✅</b> + sua cidade + 🔵 direita ou 🔴 esquerda e marque um amigo.</span></li>
+      <li><b>3</b><span>Quando a página confirmar, os 3 pontos entram no seu perfil.</span></li>
+    </ol>
+    <p class="note">Compartilhou o jogo com alguém? Comente "compartilhei" no post e ganhe mais 3 pontos depois da confirmação.</p>
+    <div class="mrow"><button class="chip" id="shareBtn">compartilhar o jogo</button><span class="grow"></span><a class="chip y" href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">abrir o Instagram</a></div>`);
+  $('shareBtn').onclick = async () => {
+    const url = location.origin + location.pathname, text = 'Vem construir o Brasil nos comentários! Escolha seu lado e ganhe sua casa no mapa 🇧🇷';
+    try { if (navigator.share) await navigator.share({ title:'Vou Ser Presidente', text, url }); else { await navigator.clipboard.writeText(text + ' ' + url); toast('Link copiado!'); } } catch (x) {}
+  };
+});
 
 function openRanking() {
   const rows = Object.entries(players).filter(([, p]) => p.casas.length).sort((a, b) => scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length).slice(0, 30);
@@ -1505,8 +1570,8 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
     <li><b>+1 🏠</b><span>Comente o nome da sua cidade e o lado no post oficial de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a>, ex.: "Sobral 🔵". Se o nome existir em mais de um estado, escreva a UF: "Bom Jesus - PI 🔵". Uma casa por @ em cada cidade.</span></li>
     <li><b>+1 ⭐</b><span>Marque no comentário um @ que já tem casa na mesma cidade. Ele recebe um convite de aliança e aceita comentando "aceito @você" (até 3 por cidade).</span></li>
     <li><b>Perfil</b><span>Pesquise seu @ na barra do topo para ver seu perfil: nível, casas, aliados, votos, cargos e convites.</span></li>
-    <li><b>+3 ⭐</b><span>Compartilhe o jogo (confirmado pela página).</span></li>
-    <li><b>+5 ⭐</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> no Instagram (bônus único, confirmado pela página).</span></li>
+    <li><b>+3 ⭐</b><span>Compartilhe o jogo e comente "compartilhei" no post (confirmado pela página).</span></li>
+    <li><b>+3 ⭐</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> e comente "segui ✅" no post (bônus único, confirmado pela página).</span></li>
     <li><b>🚩</b><span>O primeiro @ a comentar uma cidade é o fundador dela. A cidade nasce e cresce conforme as pessoas comentam.</span></li>
     <li><b>🗳️</b><span>Cada aliança aceita é 1 voto para quem convidou. Em cada cidade, o mais votado é prefeito e os 10 seguintes são vereadores. No Brasil, o mais votado de cada lado é presidente.</span></li>
     <li><b>👑</b><span>Quem tem mais pontos num estado vira o rei dele no mapa.</span></li>
