@@ -1003,7 +1003,7 @@ function spreadCities() {
     if (lm.site) { lm.site.position.x += nx - lm.g.position.x; lm.site.position.z += nz - lm.g.position.z; }
     lm.g.position.x = nx; lm.g.position.z = nz; });
 }
-window.VSP_LM = { LANDMARKS, makeSite, updateLandmarks, addLandmark, cities, refresh: () => refresh() };
+window.VSP_LM = { LANDMARKS, makeSite, updateLandmarks, addLandmark, cities, refresh: () => refresh(), _t: () => ({ parseSide, matchCity, applyImport, parseComments, players, key }) };
 function landmarkHtml(ci) {
   return LANDMARKS.filter(lm => lm.ci === ci).map(lm => { const { n, done } = landmarkProgress(lm);
     return done ? `<p class="note">🏛️ ${html(lm.name)} · inaugurado</p>`
@@ -1574,18 +1574,19 @@ function matchCity(raw) {
       if (len === 1 && k.length < 3) continue;
       const hit = NAME_IDX.get(k); if (!hit) continue;
       const uf = toks[i + len];
-      if (hit.length === 1) return { ci:hit[0] };
-      if (uf && UFSET.has(uf)) { const f = hit.filter(ci => cities[ci].uf.toLowerCase() === uf); if (f.length === 1) return { ci:f[0] }; }
-      return { amb:hit };
+      if (hit.length === 1) return { ci:hit[0], k };
+      if (uf && UFSET.has(uf)) { const f = hit.filter(ci => cities[ci].uf.toLowerCase() === uf); if (f.length === 1) return { ci:f[0], k }; }
+      return { amb:hit, k };
     }
   }
   return null;
 }
 const ambMsg = amb => { const c = cities[amb[0]]; return `"${c.name}" existe em ${amb.length} estados (${amb.map(ci => cities[ci].uf).join(', ')}); escreva com a UF, ex.: ${c.name} - ${c.uf}`; };
 function parseSide(raw, t) {
-  const n = raw.includes('⚪') || raw.includes('🤍') || /(^|[^a-z])(sem lado|nenhum lado|neutro|neutra|apartidario|apartidaria|centro)([^a-z]|$)/.test(t);
-  const b = raw.includes('🔵') || raw.includes('💙') || /(^|[^a-z])(direita|azul)([^a-z]|$)/.test(t);
-  const r = raw.includes('🔴') || /(^|[^a-z])(esquerda|vermelh[oa]?)([^a-z]|$)/.test(t);
+  const has = (...L) => L.some(x => raw.includes(x));
+  const n = has('⚪', '🤍', '⬜', '🏳') || /(^|[^a-z])(sem lado|nenhum lado|neutro|neutra|apartidario|apartidaria|centro)([^a-z]|$)/.test(t);
+  const b = has('🔵', '💙', '🟦', '🔷', '🔹') || /(^|[^a-z])(direita|direitista|direito|azul|time azul|lado azul)([^a-z]|$)/.test(t);
+  const r = has('🔴', '❤', '♥', '🟥', '🔺') || /(^|[^a-z])(esquerda|esquerdista|esquerdo|vermelh[oa]?|time vermelho|lado vermelho)([^a-z]|$)/.test(t);
   const k = (b ? 1 : 0) + (r ? 1 : 0) + (n ? 1 : 0);
   return k > 1 ? 'x' : b ? 'b' : r ? 'r' : n ? 'n' : null;
 }
@@ -1643,13 +1644,16 @@ const TIME = /^(ha\s+)?\d+\s*(s|seg|segundos?|min|m|h|horas?|d|dias?|sem|semanas
 const HANDLE = /^@?([a-z0-9._]{2,30})$/, SEP = /^@?([a-z0-9._]{2,30})\s*[,;:\t|]\s*(.+)$/i, SP = /^@?([a-z0-9._]{2,30})\s+(.+)$/i;
 const isPlace = s => NAME_IDX.has(key(s));
 function parseComments(text) {
-  const out = []; let cur = null, orphan = 0;
+  const out = []; let cur = null, orphan = 0, expect = false;
   for (let line of text.split(/\r?\n/)) {
     line = line.trim().replace(/\s*(verificado|verified)$/i, '').trim(); if (!line) continue;
     const t = norm(line);
     if (NOISE.test(t) || TIME.test(t) || /^[\d.,\s]+$/.test(t)) continue;
     let m;
-    if ((m = t.match(HANDLE)) && /[a-z]/.test(m[1]) && !isPlace(t)) { cur = m[1]; continue; }
+    // logo depois do @, a próxima linha é o comentário, mesmo que seja uma palavra só ("direita", "esquerda", "Campinas")
+    const bare = (m = t.match(HANDLE)) && /[a-z]/.test(m[1]) && !isPlace(t);
+    if (bare && !(expect && (!/[._\d]/.test(m[1]) || parseSide(line, t)))) { cur = m[1]; expect = true; continue; }
+    expect = false;
     if ((m = line.match(SEP)) && !isPlace(m[1])) { cur = m[1].toLowerCase(); out.push({ user:cur, raw:m[2] }); continue; }
     if ((m = line.match(SP)) && !isPlace(m[1])) {
       if (TIME.test(norm(m[2]))) { cur = m[1].toLowerCase(); continue; }
@@ -1659,6 +1663,11 @@ function parseComments(text) {
     out.push({ user:cur, raw:line });
   }
   return { entries:out, orphan };
+}
+// define o lado de quem ainda não tinha (ou estava ⚪ automático) e move as casas dele para a nova cor
+function setSide(p, sd) {
+  if (p.side) p.casas.forEach(cx => { const c = cities[cx]; if ((c[p.side] || 0) > 0) { c[p.side]--; c[sd] = (c[sd] || 0) + 1; } });
+  p.side = sd; if (sd !== 'n') delete p.autoN;
 }
 let arrivalSeq = 0;
 function applyImport(entries, reset) {
@@ -1686,7 +1695,7 @@ function applyImport(entries, reset) {
     }
     const sm = full.match(/(^|[^a-z])(apoio|apoiado|apoiando|apoiei|voto em|voto no|voto na|meu voto (e|eh|vai pra|vai para|pro|pra|para))\s*@([a-z0-9._]{2,30})/);
     if (sm) { const k = /prefeit/.test(t) ? 'pref' : /governad/.test(t) ? 'gov' : 'pres', r = applySupport(e.user, sm[4], k); if (r === 'ok') { rep.sups.push([e.user, sm[4], k]); act(e, `👍 +2 para @${sm[4]} (${KIND[k].toLowerCase()})`); } else ign(e, r); continue; }
-    const mc = matchCity(raw), side0 = parseSide(raw, t);
+    const mc = matchCity(raw), side0 = parseSide(raw, mc ? (' ' + key(t) + ' ').replace(' ' + mc.k + ' ', ' ') : t);  // o nome da cidade não conta como lado (ex.: Rio Branco, Céu Azul)
     const mentions = [...new Set((full.match(/@[a-z0-9._]{2,30}/g) || []).map(x => x.slice(1)))].filter(x => x !== e.user && x !== 'vouserpresidente');
     // pedidos de bônus (o dono confirma depois) e amigos marcados
     const wantsF = /(^|[^a-z])(segui|sigo|seguindo|ja sigo|to seguindo|estou seguindo)([^a-z]|$)/.test(t);
@@ -1697,14 +1706,24 @@ function applyImport(entries, reset) {
       if (wantsS && !q.claims.some(c => c.kind === 'story')) { q.claims.push({ kind:'story', t:Date.now() }); rep.claims.push([e.user, 'story']); act(e, '⏳ story +30 (você confirma)'); }
       mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); addPts(q, 3); rep.tags.push([e.user, m]); act(e, `+3 marcou @${m}`); } else act(e, `@${m} já marcado antes`); });
     }
+    // lado escrito num comentário sem cidade (ex.: "direita 🔵"): registra o lado da pessoa e pinta as casas dela que estavam ⚪
+    if (!mc && side0 && side0 !== 'x') {
+      const q = players[e.user] || (players[e.user] = newP());
+      if (!q.side || (q.side === 'n' && q.autoN && side0 !== 'n')) { setSide(q, side0); rep.users.add(e.user); act(e, `lado registrado: ${sideEmo(side0)} ${sideName(side0)}${q.casas.length ? '' : ' (falta comentar a cidade para ganhar a casa)'}`); }
+      else if (q.side !== side0) ign(e, `já joga pela ${sideName(q.side)}`);
+      else act(e, `lado ${sideEmo(side0)} já registrado`);
+      const rest = t.replace(/[^a-z ]/g, ' ').replace(/(^|\s)(sou|de|da|do|e|a|o|time|lado|eu|voto|pela|pelo|na|no|com|meu|minha|sem|nenhum|direita|direitista|direito|esquerda|esquerdista|esquerdo|azul|vermelh[oa]|neutr[oa]|centro|branco|apartidari[oa])(?=\s|$)/g, ' ').trim();
+      if (rest.length >= 3 && !wantsF && !wantsS && !mentions.length) ign(e, 'cidade não reconhecida');
+      continue;
+    }
     if (!mc && (wantsF || wantsS || mentions.length)) continue;
-    if (!mc) { if (side0) ign(e, 'cidade não reconhecida'); else rep.chatter++; continue; }
+    if (!mc) { if (side0 === 'x') ign(e, 'usou mais de um lado no mesmo comentário'); else rep.chatter++; continue; }
     if (mc.amb) { ign(e, ambMsg(mc.amb)); continue; }
     const ci = mc.ci;
     if (side0 === 'x') { ign(e, 'usou mais de um lado no mesmo comentário'); continue; }
     const p = players[e.user] || (players[e.user] = newP());
     // quem não coloca o lado fica "sem lado" (⚪); se depois escolher um lado pela primeira vez, a casa muda de cor
-    if (p.side === 'n' && p.autoN && side0 && side0 !== 'n') { p.casas.forEach(cx => { if (cities[cx].n > 0) { cities[cx].n--; cities[cx][side0]++; } }); p.side = side0; delete p.autoN; act(e, `escolheu o lado: ${sideEmo(side0)} ${sideName(side0)}`); }
+    if (p.side === 'n' && p.autoN && side0 && side0 !== 'n') { setSide(p, side0); act(e, `escolheu o lado: ${sideEmo(side0)} ${sideName(side0)}`); }
     let s = side0 || p.side;
     if (!s) { s = 'n'; p.autoN = true; act(e, '⚪ sem lado (não escolheu)'); }
     if (p.side && p.side !== s) { ign(e, `já joga pela ${sideName(p.side)}`); continue; }
