@@ -1566,7 +1566,7 @@ let DBV = 0; // versão da linha no banco
 function renderAdmin() {
   $('adminRow').hidden = !ADMIN; $('cImp').hidden = !ADMIN;
   if (!ADMIN) return;
-  const nC = pendingClaims().length; if ($('claimsBtn')) $('claimsBtn').textContent = `pedidos de pontos (${nC})`;
+  const nC = pendingClaims().length + REQN; if ($('claimsBtn')) $('claimsBtn').textContent = `pedidos de pontos (${nC})`;
   $('pubBtn').disabled = !dirty;
   $('pubBtn').textContent = dirty ? 'publicar alterações' : 'tudo publicado ✓';
   $('pubState').textContent = dirty ? 'Há alterações que só você está vendo.' : 'O que você vê é o que todos veem.';
@@ -1608,7 +1608,7 @@ async function checkOwner() {
       if (d && d.base === DBV) { applyState(d.s); dirty = true; refresh(); toast('Rascunho não publicado restaurado'); }
     } catch (e) {}
     $('logoutBtn').hidden = false;
-    setTimeout(checkMandate, 1500); setInterval(checkMandate, 60000);
+    setTimeout(checkMandate, 1500); setInterval(checkMandate, 60000); refreshReqCount(); setInterval(refreshReqCount, 45000);
   } else { toast('Esta conta não é a dona do jogo'); }
   renderAdmin();
 }
@@ -1790,16 +1790,23 @@ function openSupport(h) {
   const send = async me => {
     if (!pick) return;
     if (ADMIN) { const r = applySupport(me, h, pick.k, pick.ci); if (r !== 'ok') { $('supMsg').textContent = r; return; } refresh(); save(); closeModal(); toast('Apoio registrado: +2 pontos'); return; }
-    let sent = false;
-    if (sb) { const { error } = await sb.from('vsp_requests').insert({ handle:me, kind:'apoio', target:h, side:null, ci:pick.k === 'pref' ? pick.ci : null }); sent = !error || /duplicate|unique/i.test(error.message || ''); }
-    if (sent) { closeModal(); toast('Apoio enviado! Entra quando a página confirmar'); return; }
-    copyGo(`apoio @${h} para ${KIND[pick.k].toLowerCase()} 👍`); closeModal();
+    const r = await sendRequest({ handle:me, kind:'apoio', target:h, office:pick.k, ci:pick.k === 'pref' ? pick.ci : null });
+    if (r === 'ok') { closeModal(); toast('Apoio enviado! Entra quando a página confirmar ✓'); }
+    else $('supMsg').textContent = r;
   };
   $('supMe').oninput = draw; draw(); $('supMe').focus();
 }
+// pedidos dos visitantes (apoio, seguiu, story) vão para a fila do dono no banco
+async function sendRequest(row) {
+  if (!sb) return 'Sem conexão agora. Tente de novo.';
+  const { error } = await sb.from('vsp_requests').insert(row);
+  if (!error) return 'ok';
+  if (/duplicate|unique/i.test(error.message || '')) return 'Você já enviou esse pedido. Ele está esperando a confirmação da página.';
+  return 'Não deu para enviar agora. Tente de novo em instantes.';
+}
 async function loadSupportRequests() {
   if (!ADMIN || !sb) return [];
-  const { data, error } = await sb.from('vsp_requests').select('id,handle,target').eq('kind', 'apoio').eq('status', 'pendente').order('id').limit(200);
+  const { data, error } = await sb.from('vsp_requests').select('id,handle,kind,target,office,ci,created_at').eq('status', 'pendente').order('id').limit(300);
   return error ? [] : data || [];
 }
 // ---------- Bônus de seguir/compartilhar: o dono confirma ----------
@@ -1828,19 +1835,38 @@ function wireClaims() {
     toast(b.dataset.cok ? (k === 'story' ? '+30 pontos confirmados' : 'Confirmado') : 'Pedido recusado');
   });
 }
+const REQ_LABEL = r => r.kind === 'apoio' ? `👍 apoia <b>@${html(r.target)}</b> para ${r.office === 'pref' && r.ci != null ? 'prefeito de ' + html(cities[r.ci].name) : (KIND[r.office || 'pres'] || 'Presidente').toLowerCase()} · +2 para @${html(r.target)}`
+  : r.kind === 'seguir' ? '✅ diz que segue @vouserpresidente' : '📲 diz que postou story marcando @vouserpresidente · +30';
+function applyRequest(r) {
+  if (r.kind === 'apoio') return applySupport(r.handle, r.target, r.office || 'pres', r.office === 'pref' && r.ci != null ? r.ci : undefined);
+  const p = players[r.handle] || (players[r.handle] = newP());
+  if (r.kind === 'seguir') { p.followed = true; log(`${showH(r.handle)} segue a página ✓`); return 'ok'; }
+  if (r.kind === 'story') { p.shared = (p.shared || 0) + 1; addPts(p, 30); log(`${showH(r.handle)} postou story · +30 pts`); return 'ok'; }
+  return 'pedido desconhecido';
+}
+async function refreshReqCount() {
+  if (!ADMIN || !sb) return;
+  const { count } = await sb.from('vsp_requests').select('id', { count:'exact', head:true }).eq('status', 'pendente');
+  REQN = count || 0; renderAdmin();
+}
+let REQN = 0;
 async function openClaims() {
   if (!ADMIN) return;
+  openModal('<h2>Pedidos de pontos</h2><p>Carregando…</p>');
   const reqs = await loadSupportRequests();
-  const supH = reqs.length ? `<div class="sec" id="supBox"><h3>Apoios enviados pelo site (${reqs.length})</h3><div class="reqs">${reqs.map(r => `<div class="req"><span><b>@${html(r.handle)}</b> 👍 apoia <b>@${html(r.target)}</b></span><span class="ra"><button class="chip y" data-sok="${r.id}">confirmar +2</button><button class="chip" data-sno="${r.id}">recusar</button></span></div>`).join('')}</div></div>` : '';
-  const inner = supH + claimsHTML();
-  openModal(`<h2>Pedidos de pontos</h2>${inner || '<p>Nenhum pedido esperando agora. Quando alguém comentar "segui ✅" ou "compartilhei" no post e você colar os comentários, aparece aqui.</p>'}
-    <div class="mrow"><span class="grow"></span><button class="chip y" id="claimsPub">publicar alterações</button></div>`);
+  const site = reqs.length ? `<div class="sec" id="supBox"><h3>Enviados pelo site (${reqs.length})</h3>
+    <p class="note" style="margin:0 0 6px">Confira no Instagram antes de confirmar. Só depois de confirmar os pontos entram.</p>
+    <div class="reqs">${reqs.map(r => `<div class="req"><span><b>@${html(r.handle)}</b> ${REQ_LABEL(r)}</span><span class="ra"><a class="chip" style="font-size:14px;padding:4px 12px" href="${igUrl(r.handle)}" target="_blank" rel="noopener">ver perfil</a><button class="chip y" data-sok="${r.id}">confirmar</button><button class="chip" data-sno="${r.id}">recusar</button></span></div>`).join('')}</div></div>` : '';
+  const inner = site + claimsHTML();
+  $('mcard').innerHTML = `<button class="mx" id="mx">✕</button><h2>Pedidos de pontos</h2>${inner || '<p>Nenhum pedido esperando agora.</p>'}
+    <div class="mrow"><span class="grow"></span><button class="chip y" id="claimsPub">publicar alterações</button></div>`;
+  $('mx').onclick = closeModal;
   wireClaims(); $('claimsPub').onclick = () => { closeModal(); publishAll(); };
   $('mcard').querySelectorAll('[data-sok],[data-sno]').forEach(b => b.onclick = async () => {
     const ok = !!b.dataset.sok, id = +(b.dataset.sok || b.dataset.sno), r = reqs.find(x => x.id === id); if (!r) return;
-    if (ok) { const res = applySupport(r.handle, r.target, r.ci != null ? 'pref' : 'pres', r.ci != null ? r.ci : undefined); if (res !== 'ok') toast(res); refresh(); save(); }
+    if (ok) { const res = applyRequest(r); if (res !== 'ok') { toast(res); } refresh(); save(); if (sel >= 0) renderPanel(); }
     await sb.from('vsp_requests').update({ status:ok ? 'aprovado' : 'recusado', decided_at:new Date().toISOString() }).eq('id', id);
-    b.closest('.req').remove(); toast(ok ? '+2 pontos confirmados' : 'Apoio recusado');
+    b.closest('.req').remove(); REQN = Math.max(0, REQN - 1); renderAdmin(); toast(ok ? 'Confirmado ✓ (lembre de publicar)' : 'Recusado');
   });
 }
 // ---------- Participar (qualquer pessoa, sem login): gera o comentário pronto para colar no post ----------
@@ -1896,7 +1922,27 @@ function openJoin(tab = 'casa', pre = {}) {
   };
   build();
 }
-$('cIg').addEventListener('click', e => { e.preventDefault(); openJoin('seguir'); });
+function openFollow() {
+  openModal(`<h2>Siga e ganhe pontos</h2>
+    <ol class="rules" style="list-style:none">
+      <li><b>1</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> no Instagram (garante a sua casa).</span></li>
+      <li><b>2</b><span>Poste um story marcando <b style="min-width:0">@vouserpresidente</b>: vale <b style="min-width:0">+30 pontos</b>.</span></li>
+      <li><b>3</b><span>Coloque seu @ aqui e avise. A página confere e confirma.</span></li>
+    </ol>
+    <label style="display:block;font-weight:900;font-size:14px;margin-top:8px">Coloque seu @ aqui</label>
+    <input id="flMe" placeholder="@seu.instagram" autocomplete="off" style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 16px var(--body);margin-top:4px">
+    <div class="acts" style="margin-top:10px"><button class="act" id="flF"><span>✅ Já sigo @vouserpresidente</span><small>garante a casa</small></button><button class="act" id="flS"><span>📲 Postei story marcando a página</span><small>+30 pts</small></button></div>
+    <p class="note" id="flMsg"></p>
+    <div class="mrow"><a class="chip" href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">abrir o Instagram</a></div>`);
+  const go = async kind => {
+    const me = cleanH($('flMe').value);
+    if (!/^[a-z0-9._]{2,30}$/.test(me)) { $('flMsg').textContent = 'Coloque o seu @ do Instagram.'; return; }
+    const r = await sendRequest({ handle:me, kind });
+    $('flMsg').textContent = r === 'ok' ? 'Enviado! Os pontos entram quando a página confirmar ✓' : r;
+  };
+  $('flF').onclick = () => go('seguir'); $('flS').onclick = () => go('story');
+}
+$('cIg').addEventListener('click', e => { e.preventDefault(); openFollow(); });
 // link do post atual (o dono define)
 function openPostLink() {
   if (!ADMIN) return;
