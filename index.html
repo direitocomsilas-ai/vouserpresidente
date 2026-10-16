@@ -362,7 +362,7 @@ scene.background = new THREE.Color('#a9d8f2');
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 2500);
 const controls = new THREE.OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
-controls.maxPolarAngle = 1.05; controls.minDistance = 2.5; controls.maxDistance = 650;
+controls.maxPolarAngle = 1.05; controls.minDistance = .7; controls.maxDistance = 650;
 controls.screenSpacePanning = false;
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xb7c9b0, 0.85));
@@ -646,7 +646,8 @@ try {
 const lvImg = n => LEVEL_IMG[n - 1] ? `<img src="${LEVEL_IMG[n - 1]}" alt="Nível ${n}">` : `<b>Nv${n}</b>`;
 
 // ---------- Cidades: praça com rotatória no centro, ruas em grade e lotes em volta ----------
-const CELL = .3, LOT = .24, RMAX = 26;
+const CS = .5; // escala das cidades (menores = mais espaço entre elas)
+const CELL = .3 * CS, LOT = .24 * CS, RMAX = 26;
 const mod4 = v => ((v % 4) + 4) % 4;
 const isStreet = (i, j) => mod4(i) === 2 || mod4(j) === 2;
 const SLOTS = [];
@@ -808,9 +809,9 @@ function rebuildAll() {
       m4.compose(p4.set(c.x, GY + .005, c.z + k * CELL), q4, s4.set(size, 1, CELL * .82)); roadIM.setMatrixAt(rc++, m4);
       m4.compose(p4.set(c.x + k * CELL, GY + .006, c.z), q4, s4.set(CELL * .82, 1, size)); roadIM.setMatrixAt(rc++, m4);
     }
-    m4.compose(p4.set(c.x, GY, c.z), q4, c.i === capOf.DF ? s4.set(0, 0, 0) : s4.set(1, 1, 1)); plazaIM.setMatrixAt(ac, m4);
-    const ph = c.cap ? 1.1 : .7, off = .36, fs = c.cap ? 1 : .7;
-    m4.compose(p4.set(c.x + off, GY + ph / 2, c.z - off), q4, s4.set(1, ph, 1)); poleIM.setMatrixAt(ac, m4);
+    m4.compose(p4.set(c.x, GY, c.z), q4, c.i === capOf.DF ? s4.set(0, 0, 0) : s4.set(CS, CS, CS)); plazaIM.setMatrixAt(ac, m4);
+    const ph = (c.cap ? 1.1 : .7) * CS, off = .36 * CS, fs = (c.cap ? 1 : .7) * CS;
+    m4.compose(p4.set(c.x + off, GY + ph / 2, c.z - off), q4, s4.set(CS, ph, CS)); poleIM.setMatrixAt(ac, m4);
     m4.compose(p4.set(c.x + off + .21 * fs, GY + ph - .13 * fs, c.z - off), q4, s4.set(fs, fs, fs)); cflagIM.setMatrixAt(ac, m4);
     { const ds = domSide(c); cflagIM.setColorAt(ac, ds ? SIDE_COL[ds] : NEUTRAL); }
     ac++;
@@ -842,10 +843,10 @@ const CRISTO = (() => {
   const stone = toon('#e8e5df'), stoneD = toon('#c9c5bd'), hillM = toon('#4f9a45'), rockM = toon('#8c8a7e');
   const add = (geo, mat, x, y, z, rx = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; m.rotation.z = rz; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
   // morro (Corcovado)
-  add(new THREE.ConeGeometry(.6, .5, 8), hillM, 0, .25, 0);
-  add(new THREE.ConeGeometry(.2, .18, 7), rockM, 0, .46, 0);
+  add(new THREE.ConeGeometry(.42, .34, 8), hillM, 0, .17, 0);
+  add(new THREE.ConeGeometry(.14, .12, 7), rockM, 0, .31, 0);
   // estátua (≈1 de altura) no topo
-  const S0 = .55, st = new THREE.Group(); st.position.set(0, .52, 0); g.add(st);
+  const S0 = .36, st = new THREE.Group(); st.position.set(0, .35, 0); g.add(st);
   const addS = (geo, mat, x, y, z, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x * S0, y * S0, z * S0); m.scale.setScalar(S0); m.rotation.z = rz; m.castShadow = true; st.add(m); return m; };
   addS(new THREE.CylinderGeometry(.2, .22, .08, 16), stoneD, 0, .04, 0);          // base
   addS(new THREE.BoxGeometry(.2, .2, .2), stoneD, 0, .18, 0);                     // pedestal
@@ -860,13 +861,13 @@ const CRISTO = (() => {
   addS(new THREE.CylinderGeometry(.04, .045, .05, 10), stone, 0, .965, 0);         // pescoço
   addS(new THREE.SphereGeometry(.065, 14, 10), stone, 0, 1.03, 0);                 // cabeça
   // ao lado da cidade, virado para o mar (sudeste do Rio fica à frente da câmera)
-  g.position.set(rio.x - 1.5, TOP, rio.z - .3);
+  g.position.set(rio.x - 1.0, TOP, rio.z - .2);
   scene.add(g);
   return g;
 })();
 // ---------- Congresso Nacional ao lado de Brasília ----------
 const CONGRESSO = (() => {
-  const bsb = cities[capOf.DF], g = new THREE.Group(), K = .36;
+  const bsb = cities[capOf.DF], g = new THREE.Group(), K = .36 * CS;
   const wht = toon('#e9e6e0'), wht2 = toon('#c9c5bd'), lawn = toon('#7cc06a');
   const add = (geo, mat, x, y, z, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x * K, y * K, z * K); m.scale.setScalar(K); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
   add(new THREE.BoxGeometry(2.45, .05, 2.3), lawn, 0, .02, .05);                         // gramado da Esplanada
@@ -886,7 +887,7 @@ const CONGRESSO = (() => {
   add(new THREE.BoxGeometry(.12, .04, .9), wht, -.2, .08, .9, .25);
   add(new THREE.BoxGeometry(.12, .04, .9), wht, 1.55, .08, 0, Math.PI / 2 + .3);
   add(new THREE.BoxGeometry(.12, .04, .7), wht, -1.55, .08, -.2, Math.PI / 2 - .3);
-  g.position.set(bsb.x - .06, TOP + .03, bsb.z + .06);
+  g.position.set(bsb.x - .03, TOP + .03, bsb.z + .03);
   scene.add(g);
   return g;
 })();
@@ -903,7 +904,7 @@ function updateTrees() {
       const l = B.get((bx + dx) + ',' + (bz + dz)); if (!l) continue;
       for (const c of l) { const R = ((c.rad || 2) + 1.6) * CELL + t.s * .5; if (Math.abs(t.x - c.x) < R && Math.abs(t.z - c.z) < R) { hidden = true; break; } }
     }
-    if (Math.hypot(t.x - CRISTO.position.x, t.z - CRISTO.position.z) < .75) hidden = true;
+    if (Math.hypot(t.x - CRISTO.position.x, t.z - CRISTO.position.z) < .5) hidden = true;
 
     qy.setFromAxisAngle(up, t.ry);
     m4.compose(p4.set(t.x, TOP, t.z), qy, s4.setScalar(hidden ? 0 : t.s)); treeIM.setMatrixAt(i, m4);
@@ -976,8 +977,8 @@ function flyTo(t, d) {
   focus = { t:t.clone(), d };
 }
 const curDist = () => camera.position.distanceTo(controls.target);
-function focusCity(ci, d) { const c = cities[ci]; d = d || Math.max(5, ((TOT(c) ? c.rad : 2) + 2) * CELL * 4.2); flyTo(new THREE.Vector3(c.x, TOP, c.z + (innerWidth < 760 ? 1.6 : 0)), Math.min(curDist(), d)); }
-$('zin').onclick = () => flyTo(controls.target, Math.max(2.5, curDist() * .5));
+function focusCity(ci, d) { const c = cities[ci]; d = d || Math.max(2.2, ((TOT(c) ? c.rad : 2) + 2) * CELL * 4.2); flyTo(new THREE.Vector3(c.x, TOP, c.z + (innerWidth < 760 ? 1.6 : 0)), Math.min(curDist(), d)); }
+$('zin').onclick = () => flyTo(controls.target, Math.max(.7, curDist() * .5));
 $('zout').onclick = () => flyTo(controls.target, Math.min(650, curDist() * 1.8));
 $('zall').onclick = () => { closePanel(); flyTo(CENTER, fitDist()); };
 
@@ -1031,6 +1032,79 @@ function goLow() {
   sun.castShadow = false; renderer.setPixelRatio(1); frameCamera();
   treeIM.count = Math.min(treeIM.count, 700);
 }
+// ---------- Trânsito: mini carros em mão e contramão (pela direita) e semáforos nos cruzamentos ----------
+const CAR_CAP = 420, LIGHT_CAP = 600;
+const carGeo = merge([box(.075, .022, .036, '#ffffff', 0, .004, 0), box(.04, .018, .032, '#ffffff', -.004, .024, 0), box(.012, .014, .03, '#2b3442', .016, .026, 0)]);
+const carIM = IM(carGeo, new THREE.MeshLambertMaterial({ vertexColors:true }), CAR_CAP);
+carIM.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAR_CAP * 3).fill(1), 3);
+const lpoleIM = IM(new THREE.CylinderGeometry(.006, .006, .09, 5), toon('#2b3442'), LIGHT_CAP, false);
+const lheadIM = IM(new THREE.BoxGeometry(.022, .03, .022), new THREE.MeshBasicMaterial({ color:'#ffffff' }), LIGHT_CAP, false);
+lheadIM.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(LIGHT_CAP * 3).fill(1), 3);
+const CAR_COLS = ['#e5484d', '#2f6fec', '#ffc93c', '#ffffff', '#3ad17a', '#1b1d24', '#ff8a3d', '#8f5cf7'].map(c => new THREE.Color(c));
+const L_RED = new THREE.Color('#ff3b30'), L_GREEN = new THREE.Color('#2bd96b'), L_YEL = new THREE.Color('#ffc93c');
+const traffic = new Map(); // ci -> { R, lines, cars }
+const LANE = CELL * .2, HALFROAD = CELL * .41;
+function cityTraffic(c) {
+  const R = c.rad || 2, key = c.i;
+  let T = traffic.get(key);
+  if (T && T.R === R) return T;
+  const lines = []; for (let k = -R - 1; k <= R + 1; k++) if (mod4(k) === 2) lines.push(k);
+  const half = (2 * R + 1.6) * CELL / 2, cars = [];
+  let seed2 = c.i * 7919 + 13; const rr = () => { seed2 = (seed2 * 16807) % 2147483647; return seed2 / 2147483647; };
+  const n = Math.min(26, 2 + lines.length * 4);
+  for (let i = 0; i < n && lines.length; i++) {
+    const ax = rr() < .5 ? 'x' : 'z', k = lines[Math.floor(rr() * lines.length)], dir = rr() < .5 ? 1 : -1;
+    cars.push({ ax, k, dir, u:(rr() * 2 - 1) * half, v:.18 + rr() * .1, col:CAR_COLS[Math.floor(rr() * CAR_COLS.length)], sp:0 });
+  }
+  T = { R, lines, half, cars }; traffic.set(key, T); return T;
+}
+// fase do semáforo: eixo x verde, amarelo, depois eixo z verde, amarelo (ciclo de 7 s)
+const lightState = (t, ax) => { const ph = (t / 1000) % 7, xg = ph < 3, xy = ph >= 3 && ph < 3.5, zg = ph >= 3.5 && ph < 6.5; return ax === 'x' ? (xg ? 'g' : xy ? 'y' : 'r') : (zg ? 'g' : !xg && !xy && !zg ? 'y' : 'r'); };
+let lastT = 0;
+function updateTraffic(t, d) {
+  const dt = Math.min(.1, Math.max(0, (t - lastT) / 1000)); lastT = t;
+  if (d > 14) { carIM.count = 0; lpoleIM.count = lheadIM.count = 0; return; }
+  const tg = controls.target, reach = d * 1.3 + 1;
+  let nc = 0, nl = 0;
+  for (const ci of active) {
+    const c = cities[ci]; if (Math.abs(c.x - tg.x) > reach || Math.abs(c.z - tg.z) > reach) continue;
+    const T = cityTraffic(c);
+    // semáforos: um para cada eixo em cada cruzamento
+    for (const a of T.lines) for (const b of T.lines) {
+      if (nl + 2 > LIGHT_CAP) break;
+      const ix = c.x + a * CELL, iz = c.z + b * CELL, o = HALFROAD + .012;
+      [['x', ix - o, iz + o], ['z', ix + o, iz + o]].forEach(([ax, lx, lz]) => {
+        m4.compose(p4.set(lx, GY + .045, lz), q4, s4.set(1, 1, 1)); lpoleIM.setMatrixAt(nl, m4);
+        m4.compose(p4.set(lx, GY + .095, lz), q4, s4.set(1, 1, 1)); lheadIM.setMatrixAt(nl, m4);
+        const st = lightState(t, ax); lheadIM.setColorAt(nl, st === 'g' ? L_GREEN : st === 'y' ? L_YEL : L_RED); nl++;
+      });
+    }
+    // carros
+    const lanes = new Map();
+    T.cars.forEach(car => { const lk = car.ax + car.k + car.dir; if (!lanes.has(lk)) lanes.set(lk, []); lanes.get(lk).push(car); });
+    lanes.forEach(L => L.sort((a, b) => (a.u - b.u) * a.dir));
+    lanes.forEach(L => L.forEach((car, i) => {
+      // para no sinal vermelho/amarelo antes do cruzamento
+      let stop = false;
+      if (lightState(t, car.ax) !== 'g') for (const k2 of T.lines) { const ip = k2 * CELL, dist = (ip - car.u) * car.dir - HALFROAD; if (dist > 0 && dist < .05) { stop = true; break; } }
+      // distância do carro da frente
+      const ahead = L[i + 1]; if (ahead && (ahead.u - car.u) * car.dir < .11) stop = true;
+      const target = stop ? 0 : car.v; car.sp += (target - car.sp) * Math.min(1, dt * 6);
+      car.u += car.dir * car.sp * dt;
+      if (car.u > T.half) car.u = -T.half; else if (car.u < -T.half) car.u = T.half;
+      if (nc >= CAR_CAP) return;
+      const line = car.k * CELL;
+      if (car.ax === 'x') { p4.set(c.x + car.u, GY + .006, c.z + line + car.dir * LANE); q4.setFromAxisAngle(UPV, car.dir > 0 ? 0 : Math.PI); }
+      else { p4.set(c.x + line - car.dir * LANE, GY + .006, c.z + car.u); q4.setFromAxisAngle(UPV, car.dir > 0 ? -Math.PI / 2 : Math.PI / 2); }
+      m4.compose(p4, q4, s4.set(1, 1, 1)); carIM.setMatrixAt(nc, m4); carIM.setColorAt(nc, car.col); nc++;
+    }));
+  }
+  q4.set(0, 0, 0, 1);
+  carIM.count = nc; lpoleIM.count = lheadIM.count = nl;
+  carIM.instanceMatrix.needsUpdate = lpoleIM.instanceMatrix.needsUpdate = lheadIM.instanceMatrix.needsUpdate = true;
+  carIM.instanceColor.needsUpdate = lheadIM.instanceColor.needsUpdate = true;
+}
+const UPV = new THREE.Vector3(0, 1, 0);
 function loop(t) {
   if (perfN < 3) ph('E-frame' + perfN + ' ' + (LOWQ ? 'low' : 'hi') + ' ' + GLNAME.slice(0, 40));
   if (perfN === 0) { perfT0 = performance.now(); const ld = document.getElementById('loading'); if (ld) ld.remove(); }
@@ -1056,6 +1130,7 @@ function loop(t) {
   }
   if (dirty) { HM.forEach(m => m.instanceMatrix.needsUpdate = true); flagIM.instanceMatrix.needsUpdate = true; }
   if (!RM) clouds.forEach((g, i) => { g.position.x += .01 + i * .0015; if (g.position.x > minX + span + 15) g.position.x = minX - 15; });
+  updateTraffic(t, d);
   drawLabels(d); drawHouseLabel();
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
@@ -1078,7 +1153,7 @@ function drawLabels(d) {
     const c = cities[el.ci], kg = kings[c.uf], made = TOT(c) > 0, isSel = el.ci === sel;
     if (near && !made && !isSel) { el.hidden = true; return; }
     setText(el, near || isSel ? c.name : c.uf, !near && kg ? '👑 ' + showH(kg.h) : '', (near || isSel) && made ? founderHTML(c) : '');
-    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + 1.4 : .8);
+    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .7 : .8);
   });
   if (frameN++ % 10 === 0) {
     poolCities = [];
@@ -1094,7 +1169,7 @@ function drawLabels(d) {
     if (ci === undefined) { el.hidden = true; el.ci = -1; return; }
     const c = cities[ci]; el.ci = ci;
     setText(el, c.name, '', near || ci === sel ? founderHTML(c) : '');
-    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + 1.2 : .8);
+    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .6 : .8);
   });
 }
 
