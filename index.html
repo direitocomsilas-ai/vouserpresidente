@@ -1833,24 +1833,41 @@ function setSide(p, sd) {
   p.side = sd; if (sd !== 'n') delete p.autoN;
 }
 let arrivalSeq = 0;
+// cada @ tem uma casa só: se alguém tiver mais de uma, fica a primeira (a mais antiga)
+function enforceOneHouse() {
+  let n = 0;
+  for (const [h, p] of Object.entries(players)) {
+    if (p.casas.length <= 1) continue;
+    const keep = p.casas.slice().sort((a, b) => ((p.at && p.at[a]) || 0) - ((p.at && p.at[b]) || 0))[0];
+    p.casas.filter(ci => ci !== keep).forEach(ci => {
+      const c = cities[ci]; if (p.side && (c[p.side] || 0) > 0) c[p.side]--;
+      if (p.at) delete p.at[ci];
+      if (c.f === h) { const nx = Object.entries(players).filter(([h2, q]) => h2 !== h && q.casas.includes(ci)).sort((a, b) => ((a[1].at && a[1].at[ci]) || 0) - ((b[1].at && b[1].at[ci]) || 0))[0]; c.f = nx ? nx[0] : null; }
+      n++;
+    });
+    p.casas = [keep];
+  }
+  return n;
+}
 function applyImport(entries, reset) {
   if (reset) {
     cities.forEach(c => { c.b = 0; c.r = 0; c.n = 0; c.inf = null; c.f = null; });
     for (const k in players) delete players[k];
     credited.clear();
   }
+  enforceOneHouse();
   const rep = { read:entries.length, casas:0, pts:0, dup:0, chatter:0, ign:[], users:new Set(), touched:new Map(), claims:[], tags:[], sups:[], cmt:0 };
   const pend = [], accepts = [];
   rep.acc = 0;
   const act = (e, x) => (e.acts = e.acts || []).push(x);
-  const ign = (e, why) => { rep.ign.push([e.user, e.raw, why]); act(e, '✗ ' + why); };
+  const ign = (e, why) => { if (!e.quiet) rep.ign.push([e.user, e.raw, why]); act(e, '✗ ' + why); };
   const known = new Set(Object.keys(players));
   for (const e of entries) {
     e.acts = [];
     if (!known.has(e.user)) { known.add(e.user); act(e, '🆕 @ novo no jogo (confira)'); }
     const raw = e.raw, full = norm(raw), t = full.replace(/@[a-z0-9._]+/g, ' ');
     // +5 por comentário (cada comentário conta uma vez, mesmo colando de novo)
-    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); addPts(pc, 5); rep.cmt++; rep.users.add(e.user); act(e, '+5 comentário'); } else act(e, 'comentário já contado'); }
+    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); addPts(pc, 5); rep.cmt++; rep.users.add(e.user); act(e, '+5 comentário'); } }
     if (/(^|[^a-z])(aceito|aceita|aceitei|aceitamos|aceito alianca|recuso|recusei)([^a-z]|$)/.test(full) && /@[a-z0-9._]{2,30}/.test(full)) {
       const ok = !/(^|[^a-z])(recuso|recusei)([^a-z]|$)/.test(full);
       (full.match(/@[a-z0-9._]{2,30}/g) || []).forEach(m => accepts.push([e.user, m.slice(1), ok, raw, matchCity(raw), e]));
@@ -1896,8 +1913,9 @@ function applyImport(entries, reset) {
     if (p.side && p.side !== s) { ign(e, `já joga pela ${sideName(p.side)}`); continue; }
     if (side0 === 'n') delete p.autoN;
     p.side = s; rep.users.add(e.user);
+    if (p.casas.length && !p.casas.includes(ci)) { const c0 = cities[p.casas[0]]; ign(e, `só 1 casa por @: já mora em ${c0.name} - ${c0.uf}`); continue; }
     if (!p.casas.includes(ci)) { p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); act(e, `🏠 casa em ${cities[ci].name} - ${cities[ci].uf}${cities[ci].f === e.user ? ' (fundador)' : ''}`); }
-    else { rep.dup++; act(e, `já tinha casa em ${cities[ci].name}`); }
+    else { if (!e.quiet) rep.dup++; act(e, `já tinha casa em ${cities[ci].name}`); }
     mentions.forEach(m => pend.push([e.user, m, ci, raw, e]));
   }
   for (const [u, m, ci, raw, e] of pend) {
@@ -2081,15 +2099,18 @@ $('cImp').onclick = () => {
 function runImport() {
   const txt = $('impText').value;
   if (!txt.trim()) { toast('Cole os comentários primeiro'); return; }
-  const { entries, orphan } = parseComments(txt);
+  const parsed = parseComments(txt), orphan = parsed.orphan;
   const reset = $('impReset').checked;
+  // comentários repetidos (iguais a um já contado, ou repetidos na mesma colagem) não são listados
+  const seenK = new Set(), entries = [], quiet = []; let reps = 0;
+  parsed.entries.forEach(e => { const k = ckey(e.user, e.raw); if (seenK.has(k)) { reps++; return; } seenK.add(k); if (!reset && COMMENTED.has(k)) { e.quiet = true; quiet.push(e); reps++; } else entries.push(e); });
   // 1) prévia: simula em cima de uma cópia e volta tudo como estava
   const base = JSON.stringify(snapshot()), wasDirty = dirty;
-  applyImport(entries, reset);
+  applyImport([...quiet, ...entries], reset);
   applyState(JSON.parse(base)); dirty = wasDirty; refresh();
   const useful = e => e.acts.some(x => !/^(✗|🆕|comentário já contado|já tinha casa|@.* já marcado)/.test(x));
   $('report').innerHTML = `<div class="sec"><h3>Prévia · ${entries.length} comentário(s) de ${new Set(entries.map(e => e.user)).size} pessoa(s)</h3>
-    <p class="note" style="margin:0 0 6px">Nada mudou ainda. Desmarque o que estiver errado e toque em "computar pontos".${orphan ? ` ${orphan} linha(s) sem autor foram ignoradas.` : ''}</p>
+    <p class="note" style="margin:0 0 6px">Nada mudou ainda. Desmarque o que estiver errado e toque em "computar pontos".${reps ? ` ${reps} comentário(s) repetido(s) não aparecem aqui.` : ''}${orphan ? ` ${orphan} linha(s) sem autor foram ignoradas.` : ''}</p>
     <div class="tw"><table><thead><tr><th></th><th>Quem</th><th>Comentário</th><th>O que vai acontecer</th></tr></thead><tbody>
     ${entries.map((e, i) => `<tr><td><input type="checkbox" data-pi="${i}" ${useful(e) ? 'checked' : ''}></td><td>@${html(e.user)}</td><td>${html(e.raw.slice(0, 70))}</td><td class="why">${e.acts.length ? e.acts.map(html).join('<br>') : 'nada (conversa)'}</td></tr>`).join('')}
     </tbody></table></div>
@@ -2097,10 +2118,11 @@ function runImport() {
   const boxes = () => [...$('report').querySelectorAll('[data-pi]')];
   $('pvAll').onclick = () => boxes().forEach(b => b.checked = true);
   $('pvNone').onclick = () => boxes().forEach(b => b.checked = false);
-  $('pvGo').onclick = () => { const sel2 = boxes().filter(b => b.checked).map(b => entries[+b.dataset.pi]); if (!sel2.length) { toast('Nenhum comentário marcado'); return; } computeImport(sel2, reset, orphan); };
+  $('pvGo').onclick = () => { const sel2 = boxes().filter(b => b.checked).map(b => entries[+b.dataset.pi]); if (!sel2.length) { toast('Nenhum comentário marcado'); return; } computeImport([...quiet, ...sel2], reset, orphan, quiet.length); };
 }
-function computeImport(entries, reset, orphan) {
+function computeImport(entries, reset, orphan, reps = 0) {
   const rep = applyImport(entries, reset);
+  rep.read = Math.max(0, rep.read - reps);
   $('impReset').checked = false;
   refresh();
   rep.users.forEach(u => players[u].casas.forEach(ci => popHandle(ci, u)));
