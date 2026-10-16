@@ -864,6 +864,32 @@ const CRISTO = (() => {
   scene.add(g);
   return g;
 })();
+// ---------- Congresso Nacional ao lado de Brasília ----------
+const CONGRESSO = (() => {
+  const bsb = cities[capOf.DF], g = new THREE.Group(), K = 1.15;
+  const wht = toon('#eeece8'), wht2 = toon('#d9d6d0'), lawn = toon('#7cc06a');
+  const add = (geo, mat, x, y, z, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x * K, y * K, z * K); m.scale.setScalar(K); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+  add(new THREE.BoxGeometry(3.4, .04, 2.2), lawn, 0, .02, 0);                         // gramado
+  add(new THREE.BoxGeometry(2.6, .12, .9), wht, 0, .1, 0);                              // plataforma
+  add(new THREE.BoxGeometry(2.7, .03, 1.0), wht2, 0, .175, 0);                          // laje superior
+  // cúpula do Senado (virada para cima)
+  const dome = add(new THREE.SphereGeometry(.36, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), wht2, -.75, .19, 0); dome.scale.set(K, K * .8, K);
+  // "tigela" da Câmara (virada para baixo)
+  add(new THREE.CylinderGeometry(.48, .2, .2, 28, 1, true), wht, .75, .3, .05);
+  add(new THREE.CylinderGeometry(.2, .2, .01, 24), wht2, .75, .2, .05);
+  add(new THREE.CylinderGeometry(.44, .44, .01, 28), wht2, .75, .395, .05);
+  // torres gêmeas com a passarela
+  add(new THREE.BoxGeometry(.22, 1.5, .1), wht, -.13, .9, -.42);
+  add(new THREE.BoxGeometry(.22, 1.5, .1), wht, .13, .9, -.42);
+  add(new THREE.BoxGeometry(.48, .06, .12), wht2, 0, 1.05, -.42);
+  // rampas
+  add(new THREE.BoxGeometry(.12, .04, .9), wht, -.2, .08, .9, .25);
+  add(new THREE.BoxGeometry(.12, .04, .9), wht, 1.55, .08, 0, Math.PI / 2 + .3);
+  add(new THREE.BoxGeometry(.12, .04, .7), wht, -1.55, .08, -.2, Math.PI / 2 - .3);
+  g.position.set(bsb.x + 4.0, TOP, bsb.z + .35);
+  scene.add(g);
+  return g;
+})();
 const treeIM = new THREE.InstancedMesh(TREE_GEO, treeMat, TREES.length);
 treeIM.frustumCulled = false; treeIM.castShadow = true; treeIM.receiveShadow = true; scene.add(treeIM);
 function updateTrees() {
@@ -878,6 +904,7 @@ function updateTrees() {
       for (const c of l) { const R = ((c.rad || 2) + 1.6) * CELL + t.s * .5; if (Math.abs(t.x - c.x) < R && Math.abs(t.z - c.z) < R) { hidden = true; break; } }
     }
     if (Math.hypot(t.x - CRISTO.position.x, t.z - CRISTO.position.z) < 1.4) hidden = true;
+    if (Math.abs(t.x - CONGRESSO.position.x) < 2.3 && Math.abs(t.z - CONGRESSO.position.z) < 1.6) hidden = true;
     qy.setFromAxisAngle(up, t.ry);
     m4.compose(p4.set(t.x, TOP, t.z), qy, s4.setScalar(hidden ? 0 : t.s)); treeIM.setMatrixAt(i, m4);
   });
