@@ -1184,10 +1184,11 @@ function renderBoard(B, R) {
     <div class="mand" id="mandEl">${mandText()}</div>
     <h4>Presidente até agora · quem mais pontua</h4>
     ${pr ? `<button class="pres" data-h="${html(pr[0])}">🏛️ ${sideEmo(players[pr[0]].side)} ${html(showH(pr[0]))}</button>` : '<p class="note" style="margin:0 0 8px">Ninguém ainda: comente e seja o primeiro!</p>'}
-    <h4>Top cidades</h4>
+    <h4>Top cidades <button class="pp go" id="bdAll" style="font-size:10.5px;padding:0 6px;margin-left:4px">ver todas</button></h4>
     ${top.length ? `<ol>${top.map((c, i) => `<li><button data-ci="${c.i}"><span class="n">${i + 1}</span><span class="c">${html(c.name)} - ${c.uf}</span><small>${domSide(c) ? sideEmo(domSide(c)) : '⚖️'} ${fmt(TOT(c))}</small></button></li>`).join('')}</ol>` : '<p class="note" style="margin:0">Nenhuma cidade fundada ainda.</p>'}
     </div>`;
   board.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => select(+b.dataset.ci));
+  const ba = board.querySelector('#bdAll'); if (ba) ba.onclick = openCities;
   board.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
 }
 function refresh() { rebuildAll(); renderHUD(); }
@@ -1970,6 +1971,20 @@ function openRanking() {
   $('mcard').querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
 }
 $('cRank').onclick = openRanking;
+// ---------- Cidades mais populosas (mais casas no jogo) ----------
+function openCities() {
+  const L = active.map(ci => cities[ci]).sort((a, b) => TOT(b) - TOT(a) || (b.cap - a.cap) || a.name.localeCompare(b.name));
+  const row = (c, i) => { const o = officials(c.i), d = domSide(c), t = TOT(c);
+    return `<tr><td>${i + 1}</td><td><button class="chip" style="font-size:14px;padding:3px 10px;box-shadow:none;border-width:2px" data-ci="${c.i}">${html(c.name)} - ${c.uf}</button></td><td><b>${fmt(t)}</b></td>
+      <td>${d ? sideEmo(d) : '⚖️'} <small>${Math.round(c.b / t * 100)}% · ${Math.round(c.r / t * 100)}%${c.n ? ` · ${Math.round(c.n / t * 100)}%` : ''}</small></td>
+      <td>${o.pref ? `<button class="pp go" data-h="${html(o.pref[0])}">${html(showH(o.pref[0]))}</button>` : '—'}</td><td>${c.f ? html(showH(c.f)) : '—'}</td></tr>`; };
+  openModal(`<h2>🏙️ Cidades mais populosas</h2>
+    <p>Ranking pelo número de casas (moradores) no jogo. ${fmt(L.length)} cidades fundadas de 5.570. Toque numa cidade para ir até ela.</p>
+    ${L.length ? `<div class="tw"><table><thead><tr><th>#</th><th>Cidade</th><th>Casas</th><th>Lados 🔵·🔴${L.some(c => c.n) ? '·⚪' : ''}</th><th>Prefeito</th><th>Fundador</th></tr></thead><tbody>${L.slice(0, 100).map(row).join('')}</tbody></table></div>` : '<p>Nenhuma cidade fundada ainda.</p>'}`, true);
+  $('mcard').querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); select(+b.dataset.ci); });
+  $('mcard').querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
+}
+{ const cb = document.createElement('button'); cb.className = 'chip'; cb.id = 'cCities'; cb.textContent = 'cidades'; cb.onclick = openCities; $('cRank').after(cb); }
 
 $('cLevels').onclick = () => openModal(`<h2>Níveis da casa</h2>
   <p>Cada @ é uma casa com a bandeira do seu lado. A casa sobe de nível conforme a pontuação total do jogador (casas conquistadas + pontos). Do nível 5 em diante a casa vira prédio; os níveis mais altos ficam perto da praça e formam o centro da cidade.</p>
