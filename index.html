@@ -310,7 +310,7 @@ function info(ci) {
 const players = {};
 const credited = new Set();
 const newP = () => ({ at:{}, sup:[], side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], claims:[], tagged:[], since:Date.now() });
-const fixP = p => { const d = newP(); for (const k in d) if (p[k] === undefined) p[k] = d[k]; if (Array.isArray(p.shared)) p.shared = p.shared.length; return p; };
+const fixP = p => { const d = newP(); for (const k in d) if (p[k] === undefined) p[k] = d[k]; p.sup = p.sup.map(x => typeof x === 'string' ? { f:x, k:'pres' } : x); if (Array.isArray(p.shared)) p.shared = p.shared.length; return p; };
 const showH = h => '@' + h;
 const igUrl = h => 'https://www.instagram.com/' + encodeURIComponent(h) + '/';
 const igLink = (h, label) => `<a class="ig" href="${igUrl(h)}" target="_blank" rel="noopener"><span class="igi" aria-hidden="true"></span>${label || 'abrir @' + h + ' no Instagram'}</a>`;
@@ -697,20 +697,24 @@ function anonLevel(ci, k) { let r = hash(ci + 11, k + 3), L = 0; while (L < 14 &
 let byCity = new Map(), kings = {}, votesCity = new Map(), votesNat = { b:new Map(), r:new Map() }, presidents = { b:null, r:null };
 const votesOf = h => (votesNat.b.get(h) || 0) + (votesNat.r.get(h) || 0);
 const supOf = h => (players[h] && players[h].sup ? players[h].sup.length : 0);
-const totalVotes = h => votesOf(h) + supOf(h);
+const supK = (h, k, ci) => (players[h] && players[h].sup ? players[h].sup.filter(x => x.k === k && (ci === undefined || x.ci === ci)).length : 0);
+const presVotes = h => votesOf(h) + supK(h, 'pres');
+const govVotes = h => supK(h, 'gov');
+const totalVotes = presVotes;
 const homeUf = p => p.casas.length ? cities[p.casas[0]].uf : null;
 let OFF = { gov:{}, sen:{}, dep:{} };
 const voteSort = ci => (a, b) => (b[1] - a[1]) || (scoreOf(players[b[0]]) - scoreOf(players[a[0]])) || ((cities[ci] && cities[ci].f === b[0]) - (cities[ci] && cities[ci].f === a[0]));
 function officials(ci) {
   const m = votesCity.get(ci), c = cities[ci];
-  const list = m ? [...m.entries()].filter(([h]) => players[h] && players[h].casas.includes(ci)).sort(voteSort(ci)) : [];
+  const pv = h => (m ? (m.get(h) || 0) : 0) + supK(h, 'pref', ci);
+  const list = Object.keys(players).filter(h => players[h].casas.includes(ci) && pv(h) > 0).map(h => [h, pv(h)]).sort(voteSort(ci));
   // prefeito: o fundador, até alguém juntar mais alianças aceitas na cidade
   const fund = c && c.f && players[c.f] && players[c.f].casas.includes(ci) ? c.f : null;
-  const fv = fund && m ? (m.get(fund) || 0) : 0;
+  const fv = fund ? pv(fund) : 0;
   const pref = list.length && list[0][1] > fv ? list[0] : fund ? [fund, fv] : (list[0] || null);
   // câmara: os 10 primeiros moradores que chegaram depois do prefeito
   const arr = h => { const p = players[h]; return (p.at && p.at[ci]) || p.since || 0; };
-  const ver = Object.keys(players).filter(h => players[h].casas.includes(ci) && (!pref || h !== pref[0])).sort((a, b) => arr(a) - arr(b)).slice(0, 10).map(h => [h, m ? (m.get(h) || 0) : 0]);
+  const ver = Object.keys(players).filter(h => players[h].casas.includes(ci) && (!pref || h !== pref[0])).sort((a, b) => arr(a) - arr(b)).slice(0, 10).map(h => [h, pv(h)]);
   return { pref, ver };
 }
 function rolesOf(h) {
@@ -749,15 +753,16 @@ function rebuildAll() {
     votesNat[p.side].set(from, (votesNat[p.side].get(from) || 0) + 1);
   });
   // eleições: votos = apoios recebidos + alianças aceitas (empate: pontos, casas, quem chegou primeiro)
-  const elect = (a, b) => totalVotes(b[0]) - totalVotes(a[0]) || scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length || (a[1].since || 0) - (b[1].since || 0);
+  const elect = (a, b) => presVotes(b[0]) - presVotes(a[0]) || scoreOf(b[1]) - scoreOf(a[1]) || b[1].casas.length - a[1].casas.length || (a[1].since || 0) - (b[1].since || 0);
   const cands = Object.entries(players).filter(([, p]) => p.side && p.casas.length);
-  ['b', 'r'].forEach(sd => { const c = cands.filter(([, p]) => p.side === sd).sort(elect)[0]; presidents[sd] = c ? [c[0], totalVotes(c[0])] : null; });
+  ['b', 'r'].forEach(sd => { const c = cands.filter(([, p]) => p.side === sd).sort(elect)[0]; presidents[sd] = c ? [c[0], presVotes(c[0])] : null; });
   // por estado: 1º governador, 2º senador, 3º e 4º deputados federais (presidentes ficam de fora)
   OFF = { gov:{}, sen:{}, dep:{} };
   const presSet = new Set(['b', 'r'].map(sd => presidents[sd] && presidents[sd][0]).filter(Boolean));
   const byUf = {};
   cands.forEach(e => { if (presSet.has(e[0])) return; const uf = homeUf(e[1]); (byUf[uf] = byUf[uf] || []).push(e); });
-  Object.entries(byUf).forEach(([uf, L]) => { L.sort(elect); if (L[0]) OFF.gov[uf] = L[0][0]; if (L[1]) OFF.sen[uf] = L[1][0]; OFF.dep[uf] = L.slice(2, 4).map(e => e[0]); });
+  const electGov = (a, b) => govVotes(b[0]) - govVotes(a[0]) || elect(a, b);
+  Object.entries(byUf).forEach(([uf, L]) => { L.sort(electGov); if (L[0]) OFF.gov[uf] = L[0][0]; if (L[1]) OFF.sen[uf] = L[1][0]; OFF.dep[uf] = L.slice(2, 4).map(e => e[0]); });
   for (const [h, p] of Object.entries(players)) {
     if (!p.side) continue;
     const sc = scoreOf(p), lvl = levelOf(p);
@@ -1193,7 +1198,8 @@ function openProfile(h) {
         <div class="tile"><span>Casas</span><b>${p.casas.length}</b></div>
         <div class="tile"><span>Pontos</span><b>${p.pts}</b></div>
         <div class="tile"><span>Aliados</span><b>${p.allies.length}</b></div>
-        <div class="tile"><span>Votos (apoios + alianças)</span><b>${totalVotes(h)}</b></div>
+        <div class="tile"><span>Votos p/ presidente</span><b>${presVotes(h)}</b></div>
+        <div class="tile"><span>Votos p/ governador</span><b>${govVotes(h)}</b></div>
         <div class="tile"><span>Apoios recebidos</span><b>${supOf(h)}</b></div>
         <div class="tile"><span>Cidades fundadas</span><b>${founded.length}</b></div>
       </div>
@@ -1204,6 +1210,7 @@ function openProfile(h) {
       <div class="sec"><h3>Casas</h3><div class="ppl">${p.casas.length ? p.casas.map(ci => `<button class="pp go" data-ci="${ci}">🏠 ${cityTag(ci)}${cities[ci].f === h ? ' 🚩' : ''}</button>`).join('') : '<span class="note">Ainda sem casa.</span>'}</div></div>
       <div class="sec"><h3>Aliados</h3><div class="ppl">${p.allies.length ? p.allies.map(a => `<button class="pp go" data-h="${html(a)}">${players[a] ? lvImg(levelOf(players[a])) : ''}${html(showH(a))}</button>`).join('') : '<span class="note">Nenhum aliado ainda.</span>'}</div></div>
       ${p.reqOut.length ? `<div class="sec"><h3>Convites enviados, aguardando aceite</h3><div class="ppl">${p.reqOut.map(o => `<span class="pp">⏳ ${html(showH(o.to))} · ${html(cities[o.ci].name)}</span>`).join('')}</div></div>` : ''}
+      ${p.sup.length ? `<div class="sec"><h3>Quem apoiou (${p.sup.length})</h3><div class="ppl">${p.sup.map(x => `<button class="pp go" data-h="${html(x.f)}">👍 ${html(showH(x.f))} · ${x.k === 'pref' ? 'prefeito de ' + html(cities[x.ci].name) : KIND[x.k].toLowerCase()}</button>`).join('')}</div></div>` : ''}
       ${p.tagged.length ? `<div class="sec"><h3>Amigos que marcou (${p.tagged.length})</h3><div class="ppl">${p.tagged.map(a => `<button class="pp go" data-h="${html(a)}">${html(showH(a))}</button>`).join('')}</div></div>` : ''}
       ${p.claims.length ? `<div class="sec"><h3>Esperando confirmação da página</h3><div class="ppl">${p.claims.map(c => `<span class="pp">⏳ ${c.kind === 'seguir' ? 'disse que seguiu' : 'disse que compartilhou'} · +3</span>`).join('')}</div></div>` : ''}
       ${ADMIN ? `<div class="sec"><h3>Bônus (só você vê)</h3><div class="ppl">
@@ -1337,7 +1344,7 @@ function applyImport(entries, reset) {
       continue;
     }
     const sm = full.match(/(^|[^a-z])(apoio|apoiado|apoiando|apoiei|voto em|voto no|voto na|meu voto (e|eh|vai pra|vai para|pro|pra|para))\s*@([a-z0-9._]{2,30})/);
-    if (sm) { const r = applySupport(e.user, sm[4]); if (r === 'ok') rep.sups.push([e.user, sm[4]]); else rep.ign.push([e.user, raw, r]); continue; }
+    if (sm) { const k = /prefeit/.test(t) ? 'pref' : /governad/.test(t) ? 'gov' : 'pres', r = applySupport(e.user, sm[4], k); if (r === 'ok') rep.sups.push([e.user, sm[4], k]); else rep.ign.push([e.user, raw, r]); continue; }
     const mc = matchCity(raw), side0 = parseSide(raw, t);
     const mentions = [...new Set((full.match(/@[a-z0-9._]{2,30}/g) || []).map(x => x.slice(1)))].filter(x => x !== e.user && x !== 'vouserpresidente');
     // pedidos de bônus (o dono confirma depois) e amigos marcados
@@ -1564,7 +1571,7 @@ function runImport() {
     ${ign.length ? `<div class="tw"><table><thead><tr><th>Quem</th><th>Comentário</th><th>Por que não contou</th></tr></thead><tbody>
       ${ign.map(([u, c, w]) => `<tr><td>@${html(u)}</td><td>${html(c.slice(0, 60))}</td><td class="why">${html(w)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <p style="margin:10px 0 0">${rep.dup ? `${rep.dup} comentário(s) repetiram cidade onde a pessoa já tinha casa. ` : ''}${rep.chatter ? `${rep.chatter} comentário(s) sem cidade foram ignorados. ` : ''}${orphan ? `${orphan} linha(s) sem autor identificado.` : ''}</p>
-    ${rep.sups.length ? `<div class="sec"><h3>Apoios · +2 pontos para quem recebeu (${rep.sups.length})</h3><div class="ppl">${rep.sups.slice(0, 60).map(([u, m]) => `<span class="pp">@${html(u)} 👍 @${html(m)}</span>`).join('')}</div></div>` : ''}
+    ${rep.sups.length ? `<div class="sec"><h3>Apoios · +2 pontos para quem recebeu (${rep.sups.length})</h3><div class="ppl">${rep.sups.slice(0, 60).map(([u, m, k3]) => `<span class="pp">@${html(u)} 👍 @${html(m)} · ${KIND[k3 || 'pres']}</span>`).join('')}</div></div>` : ''}
     ${rep.tags.length ? `<div class="sec"><h3>Quem marcou amigo · +1 ponto por amigo (${rep.tags.length})</h3><div class="ppl">${rep.tags.slice(0, 60).map(([u, m]) => `<span class="pp">@${html(u)} → @${html(m)}</span>`).join('')}</div></div>` : ''}
     ${claimsHTML()}
     <div class="mrow"><button class="chip" id="seeMap">ver no mapa antes</button><span class="grow"></span><button class="chip y" id="pubNow">publicar para todos</button></div>
@@ -1572,35 +1579,62 @@ function runImport() {
   $('seeMap').onclick = closeModal; $('pubNow').onclick = publishAll; wireClaims();
 }
 // ---------- Apoios: +2 pontos e +1 voto para quem recebe ----------
-function applySupport(from, to) {
+const KIND = { pres:'Presidente', gov:'Governador', pref:'Prefeito' };
+// quais cargos "from" pode apoiar para "to": presidente qualquer um; governador só do mesmo estado; prefeito só da mesma cidade
+function supportOptions(from, to) {
+  const a = players[from], b = players[to], out = [{ k:'pres', label:'🏛️ Presidente do Brasil' }];
+  if (!b) return out;
+  const ufsA = new Set(a ? a.casas.map(ci => cities[ci].uf) : []), ufB = homeUf(b);
+  if (ufB) out.push(ufsA.has(ufB) ? { k:'gov', label:`🗺️ Governador de ${STATE[ufB]}`, uf:ufB } : { k:'gov', label:`🗺️ Governador de ${STATE[ufB]}`, no:`só quem mora em ${ufB}` });
+  const both = b.casas.filter(ci => a && a.casas.includes(ci));
+  if (both.length) both.forEach(ci => out.push({ k:'pref', ci, label:`🏙️ Prefeito de ${cities[ci].name} - ${cities[ci].uf}` }));
+  else if (b.casas.length) out.push({ k:'pref', ci:b.casas[0], label:`🏙️ Prefeito de ${cities[b.casas[0]].name}`, no:'só quem mora na cidade' });
+  return out;
+}
+function applySupport(from, to, k = 'pres', ci) {
   from = cleanH(from); to = cleanH(to);
   if (!from || !to) return 'faltou o @';
   if (from === to) return 'não dá para apoiar a si mesmo';
   const t = players[to] || (players[to] = newP());
   if (!players[from]) players[from] = newP();
-  if (t.sup.includes(from)) return `@${from} já apoiou @${to}`;
-  t.sup.push(from); t.pts += 2; log(`${showH(from)} apoiou ${showH(to)} · +2 pts`);
+  const opt = supportOptions(from, to).find(o => o.k === k && (k !== 'pref' || ci === undefined || o.ci === ci));
+  if (!opt || opt.no) return k === 'gov' ? `@${from} não mora no estado de @${to}` : k === 'pref' ? `@${from} não mora na cidade de @${to}` : 'apoio inválido';
+  if (k === 'pref' && ci === undefined) ci = opt.ci;
+  if (t.sup.some(x => x.f === from && x.k === k && (k !== 'pref' || x.ci === ci))) return `@${from} já apoiou @${to} para ${KIND[k].toLowerCase()}`;
+  t.sup.push(k === 'pref' ? { f:from, k, ci } : { f:from, k }); t.pts += 2;
+  log(`${showH(from)} apoiou ${showH(to)} para ${KIND[k].toLowerCase()} · +2 pts`);
   return 'ok';
 }
 function openSupport(h) {
   const names = Object.keys(players).filter(x => x !== h).sort();
   openModal(`<h2>Apoiar ${html(showH(h))}</h2>
-    <p>Escolha o seu perfil. Cada apoio vale <b>+2 pontos e +1 voto</b> para ${html(showH(h))}. Os votos decidem presidente, governadores, senadores e deputados.</p>
-    <input id="supMe" list="supList" placeholder="seu @" style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 15px var(--body)">
+    <p>Cada apoio vale <b>+2 pontos</b> para ${html(showH(h))} e conta como voto no cargo escolhido.</p>
+    <label style="display:block;font-weight:900;font-size:14px;margin-top:6px">Coloque seu @ aqui</label>
+    <input id="supMe" list="supList" placeholder="@seu.instagram" autocomplete="off" style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 16px var(--body);margin-top:4px">
     <datalist id="supList">${names.map(n => `<option value="@${html(n)}">`).join('')}</datalist>
-    <p class="note" id="supMsg"></p>
-    <div class="mrow"><span class="grow"></span><button class="chip y" id="supGo">👍 apoiar</button></div>`);
-  $('supGo').onclick = async () => {
-    const me = cleanH($('supMe').value);
-    if (!/^[a-z0-9._]{2,30}$/.test(me)) { $('supMsg').textContent = 'Escreva o seu @ do Instagram.'; return; }
-    if (me === h) { $('supMsg').textContent = 'Você não pode apoiar a si mesmo.'; return; }
-    if (ADMIN) { const r = applySupport(me, h); if (r !== 'ok') { $('supMsg').textContent = r; return; } refresh(); save(); closeModal(); toast('Apoio registrado: +2 pontos'); return; }
-    // visitante: manda o pedido para a página confirmar; sem a fila no banco, vira um comentário pronto
-    let sent = false;
-    if (sb) { const { error } = await sb.from('vsp_requests').insert({ handle:me, kind:'apoio', target:h }); sent = !error || /duplicate|unique/i.test(error.message || ''); }
-    if (sent) { closeModal(); toast('Apoio enviado! Entra quando a página confirmar'); return; }
-    copyGo(`apoio @${h} 👍`); closeModal();
+    <div class="sec"><h3>Apoiar para</h3><div class="acts" id="supOpts"></div></div>
+    <p class="note" id="supMsg">Presidente: qualquer pessoa pode apoiar. Governador: só quem mora no mesmo estado. Prefeito: só quem mora na mesma cidade.</p>`);
+  let pick = null;
+  const draw = () => {
+    const me = cleanH($('supMe').value), ok = /^[a-z0-9._]{2,30}$/.test(me);
+    const opts = supportOptions(me, h);
+    $('supOpts').innerHTML = opts.map((o, i) => {
+      const done = ok && players[h] && players[h].sup.some(x => x.f === me && x.k === o.k && (o.k !== 'pref' || x.ci === o.ci));
+      const dis = !ok || o.no || done || me === h;
+      return `<button class="act" data-i="${i}" ${dis ? 'disabled' : ''}><span>${o.label}</span><small>${done ? 'já apoiou ✓' : o.no ? o.no : '+2 pts'}</small></button>`;
+    }).join('');
+    $('supOpts').querySelectorAll('[data-i]').forEach(b => b.onclick = () => { pick = opts[+b.dataset.i]; send(me); });
+    if (me === h) $('supMsg').textContent = 'Você não pode apoiar a si mesmo.';
   };
+  const send = async me => {
+    if (!pick) return;
+    if (ADMIN) { const r = applySupport(me, h, pick.k, pick.ci); if (r !== 'ok') { $('supMsg').textContent = r; return; } refresh(); save(); closeModal(); toast('Apoio registrado: +2 pontos'); return; }
+    let sent = false;
+    if (sb) { const { error } = await sb.from('vsp_requests').insert({ handle:me, kind:'apoio', target:h, side:null, ci:pick.k === 'pref' ? pick.ci : null }); sent = !error || /duplicate|unique/i.test(error.message || ''); }
+    if (sent) { closeModal(); toast('Apoio enviado! Entra quando a página confirmar'); return; }
+    copyGo(`apoio @${h} para ${KIND[pick.k].toLowerCase()} 👍`); closeModal();
+  };
+  $('supMe').oninput = draw; draw(); $('supMe').focus();
 }
 async function loadSupportRequests() {
   if (!ADMIN || !sb) return [];
@@ -1643,7 +1677,7 @@ async function openClaims() {
   wireClaims(); $('claimsPub').onclick = () => { closeModal(); publishAll(); };
   $('mcard').querySelectorAll('[data-sok],[data-sno]').forEach(b => b.onclick = async () => {
     const ok = !!b.dataset.sok, id = +(b.dataset.sok || b.dataset.sno), r = reqs.find(x => x.id === id); if (!r) return;
-    if (ok) { const res = applySupport(r.handle, r.target); if (res !== 'ok') toast(res); refresh(); save(); }
+    if (ok) { const res = applySupport(r.handle, r.target, r.ci != null ? 'pref' : 'pres', r.ci != null ? r.ci : undefined); if (res !== 'ok') toast(res); refresh(); save(); }
     await sb.from('vsp_requests').update({ status:ok ? 'aprovado' : 'recusado', decided_at:new Date().toISOString() }).eq('id', id);
     b.closest('.req').remove(); toast(ok ? '+2 pontos confirmados' : 'Apoio recusado');
   });
@@ -1722,7 +1756,7 @@ function openRanking() {
       ${rows.map(([h, p], i) => `<tr><td>${i + 1}</td><td><button class="chip" style="font-size:14px;padding:3px 10px;box-shadow:none;border-width:2px" data-h="${html(h)}">${html(showH(h))} ${sideEmo(p.side)}</button> <a class="igmini" href="${igUrl(h)}" target="_blank" rel="noopener" aria-label="Instagram de ${html(showH(h))}"><span class="igi" aria-hidden="true"></span></a></td><td>${lvImg(levelOf(p))} Nv ${levelOf(p)}</td><td>${p.casas.length}</td><td>${totalVotes(h)}</td><td>${scoreOf(p)}</td></tr>`).join('')}
     </tbody></table></div>` : '<p>Ainda não há jogadores com casa. Cole os comentários de um post ou conquiste uma casa.</p>'}
     ${Object.keys(OFF.gov).length ? `<h2 style="font-size:22px;margin-top:16px">🗳️ Estados: governador, senador e deputados federais</h2><div class="tw"><table><thead><tr><th>UF</th><th>Governador</th><th>Senador</th><th>Deputados federais</th></tr></thead><tbody>
-      ${Object.keys(OFF.gov).sort().map(uf => { const b2 = x => x ? `<button class="pp go" data-h="${html(x)}">${html(showH(x))} · ${totalVotes(x)}</button>` : '<span class="note">vaga</span>'; return `<tr><td>${uf}</td><td>${b2(OFF.gov[uf])}</td><td>${b2(OFF.sen[uf])}</td><td>${[0, 1].map(i => b2((OFF.dep[uf] || [])[i])).join(' ')}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+      ${Object.keys(OFF.gov).sort().map(uf => { const b2 = x => x ? `<button class="pp go" data-h="${html(x)}">${html(showH(x))} · ${govVotes(x)}</button>` : '<span class="note">vaga</span>'; return `<tr><td>${uf}</td><td>${b2(OFF.gov[uf])}</td><td>${b2(OFF.sen[uf])}</td><td>${[0, 1].map(i => b2((OFF.dep[uf] || [])[i])).join(' ')}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
     ${ks.length ? `<h2 style="font-size:22px;margin-top:16px">👑 Reis dos estados</h2><div class="tw"><table><tbody>
       ${ks.map(([uf, k]) => `<tr><td>${uf}</td><td>${STATE[uf]}</td><td>👑 ${html(showH(k.h))}</td><td>${k.sc} pts</td></tr>`).join('')}</tbody></table></div>` : ''}`);
   $('mcard').querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
@@ -1740,8 +1774,8 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
     <li><b>+1 ⭐</b><span>Cada amigo que você marcar no post (vale uma vez por amigo).</span></li>
     <li><b>+1 🗳️</b><span>Marque um @ que já tem casa na sua cidade: ele aceita comentando "aceito @você" e vocês viram aliados (+1 voto e +1 ponto, até 3 por cidade).</span></li>
     <li><b>🏛️</b><span>O 1º a comentar a cidade é o fundador e prefeito; os 10 seguintes formam a Câmara de Vereadores.</span></li>
-    <li><b>+2 👍</b><span>Abra o perfil de alguém e toque em "apoiar" (ou comente "apoio @fulano"). Cada apoio vale +2 pontos e +1 voto para quem recebe.</span></li>
-    <li><b>🗳️</b><span>Os mais votados do Brasil são os presidentes (um de cada lado). Em cada estado: o 1º é governador, o 2º senador e o 3º e 4º deputados federais.</span></li>
+    <li><b>+2 👍</b><span>Abra o perfil de alguém, toque em "apoiar" e coloque seu @. Presidente: qualquer um apoia. Governador: só quem mora no mesmo estado. Prefeito: só quem mora na mesma cidade. Cada apoio vale +2 pontos (ou comente "apoio @fulano para prefeito").</span></li>
+    <li><b>🗳️</b><span>Os mais apoiados para presidente são os presidentes (um de cada lado). Em cada estado, pelos apoios para governador: o 1º é governador, o 2º senador e o 3º e 4º deputados federais.</span></li>
     <li><b>Perfil</b><span>Pesquise seu @ na barra do topo para ver seu perfil: nível, casas, aliados, votos, cargos e convites.</span></li>
     <li><b>+3 ⭐</b><span>Compartilhe o jogo e comente "compartilhei" no post (confirmado pela página).</span></li>
     <li><b>+3 ⭐</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> e comente "segui ✅" no post (bônus único, confirmado pela página).</span></li>
