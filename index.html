@@ -1112,7 +1112,7 @@ function renderHUD() {
   let B = 0, R = 0;
   let N = 0; active.forEach(ci => { B += cities[ci].b; R += cities[ci].r; N += cities[ci].n || 0; });
   const pb = B + R ? B / (B + R) * 100 : 50; void pb;
-  $('count').textContent = `${fmt(B + R)} casas em ${fmt(active.length)} cidades`;
+  $('count').textContent = `${fmt(B + R + N)} casas em ${fmt(active.length)} cidades`;
   $('natB').textContent = `🔵 ${Math.round(pb)}%`; $('natR').textContent = `${100 - Math.round(pb)}% 🔴`;
   { const T = B + R + N, fb = T ? B / T * 100 : 50, fr = T ? R / T * 100 : 50, fn = T ? N / T * 100 : 0;
     let bn = document.getElementById('bn'); if (!bn) { bn = document.createElement('i'); bn.id = 'bn'; bn.style.background = '#9aa3b2'; $('bb').after(bn); }
@@ -1121,6 +1121,39 @@ function renderHUD() {
   $('pres').innerHTML = ['b', 'r', 'n'].filter(sd => sd !== 'n' || presidents.n).map(sd => `<span class="${sd}">🏛️ ${sideEmo(sd)} ${presidents[sd] ? html(showH(presidents[sd][0])) + ` · ${presidents[sd][1]} pts` : 'presidência vaga'}</span>`).join('');
   if (active.length && /vazio/.test($('ticker').textContent)) log('Comente no post do @vouserpresidente: CIDADE + @ + 🔵 direita ou 🔴 esquerda');
   renderBoard(B, R);
+  renderPop();
+}
+// ---------- Canto direito: população do Brasil e de cada estado (casas no jogo) ----------
+const popEl = document.createElement('aside'); popEl.id = 'pop'; popEl.className = 'card';
+document.getElementById('app').appendChild(popEl);
+const pcss = document.createElement('style');
+pcss.textContent = `#pop{position:absolute;right:calc(max(16px,env(safe-area-inset-right,0px)) + 72px);top:200px;z-index:5;width:190px;padding:9px 11px;font-size:12.5px}
+#pop h4{margin:0 0 4px;font-size:10.5px;font-weight:900;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+#pop .tot{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:6px}
+#pop .tot b{font-family:var(--display);font-weight:400;font-size:26px;line-height:1}
+#pop .tot span{font-weight:900;font-size:12px;color:var(--muted)}
+#pop ol{list-style:none;margin:0;padding:0;display:grid;gap:3px;max-height:230px;overflow:auto}
+#pop ol button{width:100%;display:grid;grid-template-columns:28px 1fr auto;align-items:center;gap:6px;border:0;background:var(--line);border-radius:9px;padding:3px 7px;font:800 12px var(--body);cursor:pointer;text-align:left}
+#pop ol button:hover{background:var(--sun)}
+#pop ol .uf{font-family:var(--display);font-weight:400;font-size:14px}
+#pop ol .bar{height:6px;border:0;border-radius:99px;background:#fff;overflow:hidden;display:flex}
+#pop ol .bar i{display:block;height:100%}
+#pop ol b{font-variant-numeric:tabular-nums}
+#panel:not([hidden]) ~ #pop{display:none}
+@media (max-width:760px){#pop{right:max(16px,env(safe-area-inset-right,0px));top:calc(172px + env(safe-area-inset-top,0px));width:112px;padding:6px 7px;font-size:11px}
+ #pop .tot{flex-direction:column;align-items:flex-start;gap:0} #pop .tot b{font-size:20px} #pop ol{max-height:132px} #pop ol button{grid-template-columns:24px 1fr;padding:2px 6px} #pop ol .bar{display:none} #pop ol b{justify-self:end}}`;
+document.head.appendChild(pcss);
+function renderPop() {
+  const per = {}; let T = 0;
+  active.forEach(ci => { const c = cities[ci], t = TOT(c); T += t; const s2 = per[c.uf] || (per[c.uf] = { t:0, b:0, r:0, n:0 }); s2.t += t; s2.b += c.b; s2.r += c.r; s2.n += c.n || 0; });
+  const ufs = Object.keys(STATE).sort((a, b) => ((per[b] || {}).t || 0) - ((per[a] || {}).t || 0) || a.localeCompare(b));
+  const mx = Math.max(1, ...ufs.map(u => (per[u] || {}).t || 0));
+  popEl.innerHTML = `<h4>População</h4>
+    <div class="tot"><span>🇧🇷 Brasil</span><b>${fmt(T)}</b></div>
+    <h4>Por estado</h4>
+    <ol>${ufs.map(u => { const x = per[u] || { t:0, b:0, r:0, n:0 }, w = x.t / mx * 100;
+      return `<li><button data-uf="${u}" title="${STATE[u]}: ${fmt(x.t)} moradores"><span class="uf">${u}</span><span class="bar" style="width:${Math.max(4, w)}%">${x.t ? `<i style="width:${x.b / x.t * 100}%;background:var(--blue)"></i><i style="width:${x.n / x.t * 100}%;background:#9aa3b2"></i><i style="width:${x.r / x.t * 100}%;background:var(--red)"></i>` : ''}</span><b>${fmt(x.t)}</b></button></li>`; }).join('')}</ol>`;
+  popEl.querySelectorAll('[data-uf]').forEach(b => b.onclick = () => select(capOf[b.dataset.uf]));
 }
 // ---------- Quadro da tela inicial: lados no Brasil, presidente até agora e top 3 cidades ----------
 const board = document.createElement('aside');
