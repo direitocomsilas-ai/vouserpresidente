@@ -1108,34 +1108,84 @@ const MARA = (() => {
   scene.add(g);
   return { g, IT, IS, IH, SEATS, CAP, s };
 })();
+// ---------- Presidente Park: estádio de São Paulo (mesmas regras do Maracanã) ----------
+const PPARK = (() => {
+  const sp = cities[capOf.SP], g = new THREE.Group();
+  const wht = toon('#f2f0eb'), wht2 = toon('#d6d3cb'), grey = toon('#b3b7c0'), grey2 = toon('#9ea3ad'), grass = toon('#3fa34d'), grass2 = toon('#36913f'), line = toon('#ffffff');
+  const add = (geo, mat, x, y, z, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+  const A = .55, B = .42, H = .16, N = 4.2;
+  // "quadrado arredondado" (superelipse)
+  const se = (k, n = 72) => { const P = []; for (let i = 0; i < n; i++) { const t = i / n * Math.PI * 2, c = Math.cos(t), s2 = Math.sin(t); P.push(new THREE.Vector2(Math.sign(c) * Math.pow(Math.abs(c), 2 / N) * A * k, Math.sign(s2) * Math.pow(Math.abs(s2), 2 / N) * B * k)); } return P; };
+  const ring = (kOut, kIn, h, y, mat) => { const sh = new THREE.Shape(se(kOut)); sh.holes.push(new THREE.Path(se(kIn).reverse())); const geo = new THREE.ExtrudeGeometry(sh, { depth:h, bevelEnabled:false, curveSegments:4 }); geo.rotateX(-Math.PI / 2); return add(geo, mat, 0, y, 0); };
+  add(new THREE.BoxGeometry(A * 2.5, .02, B * 2.6), wht2, 0, .01, 0);                         // esplanada
+  ring(1.0, .8, H, .02, wht);                                                                  // fachada + cobertura
+  ring(1.012, .99, H * .55, .02 + H * .22, grey2);                                             // faixa da fachada "vazada"
+  for (let t = 0; t < 4; t++) ring(.8, .5 + t * .075, .025 + t * .03, .02, grey);             // arquibancada em degraus
+  { const sh = new THREE.Shape(se(.5)); const geo = new THREE.ExtrudeGeometry(sh, { depth:.008, bevelEnabled:false }); geo.rotateX(-Math.PI / 2); add(geo, grass2, 0, .02, 0); }
+  add(new THREE.BoxGeometry(.4, .006, .25), grass, 0, .03, 0);
+  [[0, 0, .004, .25], [.195, 0, .004, .25], [-.195, 0, .004, .25], [0, .122, .394, .004], [0, -.122, .394, .004], [.17, 0, .05, .1], [-.17, 0, .05, .1]].forEach(([x, z, w, d]) => add(new THREE.BoxGeometry(w, .003, d), line, x, .035, z));
+  // treliças em arco nos quatro cantos
+  [[1, 1], [-1, 1], [1, -1], [-1, -1]].forEach(([sx, sz]) => { const tr = new THREE.TorusGeometry(.085, .007, 5, 14, Math.PI); const m = add(tr, wht2, sx * A * .86, .02 + H, sz * B * .86); m.rotation.y = Math.atan2(sz * B, -sx * A); });
+  // nome no teto
+  { const cv = document.createElement('canvas'); cv.width = 512; cv.height = 96; const x = cv.getContext('2d'); x.fillStyle = '#f2f0eb'; x.fillRect(0, 0, 512, 96); x.fillStyle = '#8f939b'; x.font = '900 60px Nunito, Arial'; x.textAlign = 'center'; x.fillText('PRESIDENTE PARK', 256, 70);
+    const m = add(new THREE.PlaneGeometry(.36, .067), new THREE.MeshLambertMaterial({ map:new THREE.CanvasTexture(cv) }), 0, .02 + H + .003, B * .9); m.rotation.x = -Math.PI / 2; m.castShadow = false; }
+  // prédio-garagem ao lado
+  add(new THREE.BoxGeometry(.2, .1, .34), wht2, A + .2, .07, .05);
+  for (let i = 0; i < 4; i++) add(new THREE.BoxGeometry(.205, .006, .345), grey2, A + .2, .04 + i * .025, .05);
+  // torcedores
+  const CAP = 520, s = .03;
+  const mk = col => { const m = new THREE.InstancedMesh(col.geo, new THREE.MeshLambertMaterial({ color:'#ffffff' }), CAP); m.setColorAt(0, new THREE.Color('#fff')); m.count = 0; m.castShadow = false; m.frustumCulled = false; g.add(m); return m; };
+  const torso = new THREE.BoxGeometry(.5 * s, .42 * s, .3 * s); torso.translate(0, .62 * s, 0);
+  const shorts = new THREE.BoxGeometry(.52 * s, .22 * s, .5 * s); shorts.translate(0, .32 * s, .08 * s);
+  const head = new THREE.SphereGeometry(.18 * s, 8, 6); head.translate(0, 1.0 * s, 0);
+  const IT = mk({ geo:torso }), IS = mk({ geo:shorts }), IH = mk({ geo:head });
+  const SEATS = [];
+  for (let r = 0; r < 4; r++) {
+    const k = .5 + r * .075 + .035, y = .02 + .025 + r * .03, pts = se(k, 400);
+    let per = 0; for (let i = 0; i < pts.length; i++) per += pts[i].distanceTo(pts[(i + 1) % pts.length]);
+    const n = Math.floor(per / (s * .72)), step = pts.length / n;
+    for (let i = 0; i < n; i++) { const j = Math.floor((pts.length * .75 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * step) % pts.length + pts.length) % pts.length; SEATS.push([pts[j].x, y, -pts[j].y, r]); }
+  }
+  g.position.set(sp.x + 1.35, TOP, sp.z + .2);
+  scene.add(g);
+  return { g, IT, IS, IH, SEATS, CAP, s };
+})();
 const SKIN = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'].map(c => new THREE.Color(c));
 let FANS = [];
+const STADIUMS = [{ st:MARA, name:'Maracanã', uf:null }, { st:PPARK, name:'Presidente Park', uf:'SP' }];
 function updateFans() {
-  FANS = Object.entries(players).filter(([, p]) => p.time && TEAMS[p.time]).sort((a, b) => (a[1].tt || 0) - (b[1].tt || 0)).slice(0, Math.min(MARA.CAP, MARA.SEATS.length));
+  FANS = Object.entries(players).filter(([, p]) => p.time && TEAMS[p.time]).sort((a, b) => (a[1].tt || 0) - (b[1].tt || 0));
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), c1 = new THREE.Color(), c2 = new THREE.Color();
-  FANS.forEach(([h, pl], i) => {
-    const [x, y, z] = MARA.SEATS[i]; q.setFromAxisAngle(up, Math.atan2(-x, -z)); p.set(x, y, z); m.compose(p, q, sc);
-    [MARA.IT, MARA.IS, MARA.IH].forEach(im => im.setMatrixAt(i, m));
-    const t = TEAMS[pl.time]; MARA.IT.setColorAt(i, c1.set(t[1])); MARA.IS.setColorAt(i, c2.set(t[2])); MARA.IH.setColorAt(i, SKIN[Math.floor(hash(i, 7) * SKIN.length)]);
+  STADIUMS.forEach(({ st }) => {
+    const n = Math.min(FANS.length, st.CAP, st.SEATS.length);
+    for (let i = 0; i < n; i++) {
+      const pl = FANS[i][1], [x, y, z] = st.SEATS[i]; q.setFromAxisAngle(up, Math.atan2(-x, -z)); p.set(x, y, z); m.compose(p, q, sc);
+      [st.IT, st.IS, st.IH].forEach(im => im.setMatrixAt(i, m));
+      const t = TEAMS[pl.time]; st.IT.setColorAt(i, c1.set(t[1])); st.IS.setColorAt(i, c2.set(t[2])); st.IH.setColorAt(i, SKIN[Math.floor(hash(i, 7) * SKIN.length)]);
+    }
+    [st.IT, st.IS, st.IH].forEach(im => { im.count = n; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; });
   });
-  [MARA.IT, MARA.IS, MARA.IH].forEach(im => { im.count = FANS.length; im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true; });
 }
 const MARA_LM = addLandmark(capOf.RJ, 'Maracanã', MARA.g);
 MARA_LM.fans = true;
-// etiquetas com o @ dos torcedores quando a câmera chega perto do estádio
+const PPARK_LM = addLandmark(capOf.SP, 'Presidente Park', PPARK.g);
+PPARK_LM.fans = true;
+STADIUMS[0].lm = MARA_LM; STADIUMS[1].lm = PPARK_LM;
+// etiquetas com o @ dos torcedores quando a câmera chega perto de um estádio
 const fanLabs = [], FANLAB_N = 28; let fanSel = null;
 { const st = document.createElement('style'); st.textContent = `.flab{position:absolute;transform:translate(-50%,-100%);background:var(--paper,#fff);border:2px solid var(--ink,#111);border-radius:99px;padding:1px 7px 1px 4px;font:800 10px Nunito,system-ui,sans-serif;white-space:nowrap;display:flex;gap:4px;align-items:center;cursor:pointer;pointer-events:auto}.flab i{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--ink,#111)}.flab.sel{background:var(--sun,#ffc93c);font-size:13px;z-index:3}`; document.head.appendChild(st); }
 function initFanLabs() { for (let i = 0; i < FANLAB_N; i++) { const el = document.createElement('div'); el.className = 'flab'; el.hidden = true; el.onclick = () => { if (el.h) openProfile(el.h); }; labelsEl.appendChild(el); fanLabs.push(el); } }
 const fv = new THREE.Vector3();
-function fanWorld(i, out) { const [x, y, z] = MARA.SEATS[i]; return MARA.g.localToWorld(out.set(x, y + MARA.s * 1.3, z)); }
+function fanWorld(st, i, out) { const [x, y, z] = st.SEATS[i]; return st.g.localToWorld(out.set(x, y + st.s * 1.3, z)); }
 function drawFanLabels(d) {
   if (!fanLabs.length) initFanLabs();
-  const near = d < 2.6 && controls.target.distanceTo(MARA.g.position) < 1.6 && !(MARA_LM.obra && MARA_LM.site && MARA_LM.site.visible && MARA_LM.lastN < 15);
+  const S = STADIUMS.find(o => controls.target.distanceTo(o.st.g.position) < 1.6), st = S && S.st, lm = S && S.lm;
+  const near = S && d < 2.6 && !(lm.obra && lm.site && lm.site.visible && lm.lastN < 15);
   const L = [];
   if (near && FANS.length) {
-    const W = canvas.clientWidth, Hh = canvas.clientHeight, camP = camera.position;
-    const cdx = camP.x - MARA.g.position.x, cdz = camP.z - MARA.g.position.z, cl = Math.hypot(cdx, cdz) || 1;
-    FANS.forEach(([h, pl], i) => { const S = MARA.SEATS[i], sl = Math.hypot(S[0], S[2]) || 1; if (fanSel !== h && (S[0] * cdx + S[2] * cdz) / (sl * cl) > .15) return; fanWorld(i, fv); const dist = fv.distanceTo(camP); fv.project(camera); if (fv.z > 1 || Math.abs(fv.x) > .95 || Math.abs(fv.y) > .95) return; if (fanSel !== h && MARA_LM.plane && fanWorld(i, new THREE.Vector3()).y > MARA_LM.plane.constant) return; L.push([dist - (fanSel === h ? 99 : 0), h, pl, (fv.x + 1) / 2 * W, (1 - fv.y) / 2 * Hh]); });
+    const W = canvas.clientWidth, Hh = canvas.clientHeight, camP = camera.position, n = Math.min(FANS.length, st.CAP, st.SEATS.length);
+    const cdx = camP.x - st.g.position.x, cdz = camP.z - st.g.position.z, cl = Math.hypot(cdx, cdz) || 1;
+    for (let i = 0; i < n; i++) { const [h, pl] = FANS[i], Sx = st.SEATS[i], sl = Math.hypot(Sx[0], Sx[2]) || 1; if (fanSel !== h && (Sx[0] * cdx + Sx[2] * cdz) / (sl * cl) > .15) continue; fanWorld(st, i, fv); const dist = fv.distanceTo(camP); const wy = fv.y; fv.project(camera); if (fv.z > 1 || Math.abs(fv.x) > .95 || Math.abs(fv.y) > .95) continue; if (fanSel !== h && lm.plane && wy > lm.plane.constant) continue; L.push([dist - (fanSel === h ? 99 : 0), h, pl, (fv.x + 1) / 2 * W, (1 - fv.y) / 2 * Hh]); }
     L.sort((a, b) => a[0] - b[0]);
     const keep = []; for (const x of L) { if (keep.length >= FANLAB_N) break; if (keep.every(y => Math.abs(y[3] - x[3]) > 95 || Math.abs(y[4] - x[4]) > 20)) keep.push(x); }
     L.length = 0; L.push(...keep);
@@ -1149,18 +1199,20 @@ function drawFanLabels(d) {
 }
 function goToFan(h) {
   const i = FANS.findIndex(x => x[0] === h); if (i < 0) return false;
-  fanSel = h; fanWorld(i, fv); flyTo(fv.clone(), 1.1); return true;
+  const p = players[h], S = STADIUMS.find(o => o.uf && p && homeUf(p) === o.uf) || STADIUMS[0];
+  if (i >= S.st.SEATS.length) return false;
+  fanSel = h; fanWorld(S.st, i, fv); flyTo(fv.clone(), 1.1); return true;
 }
-function fansHtml() {
-  if (!FANS.length) return `<p class="note">⚽ Ninguém na arquibancada ainda. Comente o nome do seu time no post para ganhar sua cadeira no Maracanã!</p>`;
+function fansHtml(name = 'Maracanã') {
+  if (!FANS.length) return `<p class="note">⚽ Ninguém na arquibancada ainda. Comente o nome do seu time no post para ganhar sua cadeira no ${html(name)}!</p>`;
   const cnt = {}; FANS.forEach(([, p]) => cnt[p.time] = (cnt[p.time] || 0) + 1);
   const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 6);
-  return `<div class="sec"><h3>⚽ Arquibancada do Maracanã · ${FANS.length} torcedor(es)</h3><div class="ppl">${top.map(([id, n]) => `<span class="pp"><span class="dot" style="background:${TEAMS[id][1]};border:2px solid var(--ink)"></span>${html(TEAMS[id][0])} · ${n}</span>`).join('')}</div><span class="note">Comente o nome do seu time para ganhar sua cadeira, com um boneco nas cores dele e o seu @. Dê zoom no estádio para ver.</span></div>`;
+  return `<div class="sec"><h3>⚽ Arquibancada do ${html(name)} · ${FANS.length} torcedor(es)</h3><div class="ppl">${top.map(([id, n]) => `<span class="pp"><span class="dot" style="background:${TEAMS[id][1]};border:2px solid var(--ink)"></span>${html(TEAMS[id][0])} · ${n}</span>`).join('')}</div><span class="note">Comente o nome do seu time para ganhar sua cadeira, com um boneco nas cores dele e o seu @. Dê zoom no estádio para ver.</span></div>`;
 }
-window.VSP_LM = { camTo(v, d, tilt = .9, az = .4) { focus = null; controls.target.copy(v); camera.position.set(v.x + Math.sin(az) * Math.sin(tilt) * d, v.y + Math.cos(tilt) * d, v.z + Math.cos(az) * Math.sin(tilt) * d); }, MARA, FANS:() => FANS, goToFan, parseTeam, LANDMARKS, makeSite, updateLandmarks, addLandmark, cities, refresh: () => refresh(), _t: () => ({ parseSide, matchCity, applyImport, parseComments, players, key }) };
+window.VSP_LM = { PPARK, camTo(v, d, tilt = .9, az = .4) { focus = null; controls.target.copy(v); camera.position.set(v.x + Math.sin(az) * Math.sin(tilt) * d, v.y + Math.cos(tilt) * d, v.z + Math.cos(az) * Math.sin(tilt) * d); }, MARA, FANS:() => FANS, goToFan, parseTeam, LANDMARKS, makeSite, updateLandmarks, addLandmark, cities, refresh: () => refresh(), _t: () => ({ parseSide, matchCity, applyImport, parseComments, players, key }) };
 function landmarkHtml(ci) {
   return LANDMARKS.filter(lm => lm.ci === ci).map(lm => { const { n, done } = landmarkProgress(lm);
-    const fx = lm.fans ? fansHtml() : '';
+    const fx = lm.fans ? fansHtml(lm.name) : '';
     return fx + (done ? `<p class="note">🏛️ ${html(lm.name)} · inaugurado</p>`
       : `<div class="sec"><h3>🚧 ${html(lm.name)} em obra</h3><div class="bar"><i class="b" style="width:${Math.min(100, n / lm.need * 100)}%;background:#ffc93c"></i></div><span class="note">${n}/${lm.need} moradores · a obra termina quando a cidade chegar a ${lm.need} moradores. Chame seus amigos!</span></div>`); }).join('');
 }
@@ -1177,7 +1229,7 @@ function updateTrees() {
       const l = B.get((bx + dx) + ',' + (bz + dz)); if (!l) continue;
       for (const c of l) { const R = ((c.rad || 2) + 1.6) * CELL + t.s * .5; if (Math.abs(t.x - c.x) < R && Math.abs(t.z - c.z) < R) { hidden = true; break; } }
     }
-    if (LANDMARKS.some(lm => Math.hypot(t.x - lm.g.position.x, t.z - lm.g.position.z) < .5)) hidden = true;
+    if (LANDMARKS.some(lm => Math.hypot(t.x - lm.g.position.x, t.z - lm.g.position.z) < Math.max(.5, Math.max(lm.hx || 0, lm.hz || 0) + .35 + t.s * .3))) hidden = true;
 
     qy.setFromAxisAngle(up, t.ry);
     m4.compose(p4.set(t.x, TOP, t.z), qy, s4.setScalar(hidden ? 0 : t.s)); treeIM.setMatrixAt(i, m4);
