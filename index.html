@@ -698,6 +698,8 @@ const poleIM = IM(new THREE.CylinderGeometry(.022, .022, 1, 6), toon('#3a3f4b'),
 const cflagIM = IM(new THREE.BoxGeometry(.4, .25, .03), toon('#ffffff'), NC);
 const dotIM = IM(new THREE.CylinderGeometry(1, 1, .05, 10), toon('#ffffff'), NC, false);
 const rimIM = IM(new THREE.CylinderGeometry(1.28, 1.28, .04, 10), new THREE.MeshBasicMaterial({ color:'#1b1d24' }), NC, false);
+// bolinhas das cidades: quando se sobrepõem, não podem "brigar" pela profundidade (era o pisca-pisca vermelho/azul)
+dotIM.material.depthWrite = false; rimIM.material.depthWrite = false; rimIM.renderOrder = 1; dotIM.renderOrder = 2;
 dotIM.count = rimIM.count = NC;
 // cores por instância: o buffer precisa ter o tamanho da capacidade (count começa em 0)
 [flagIM, cflagIM, dotIM].forEach(m => { m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3).fill(1), 3); });
@@ -1378,6 +1380,8 @@ function loop(t) {
   controls.update();
   sun.target.position.copy(controls.target); sun.position.copy(controls.target).add(SUN_OFF);
   const d = curDist(); updateDots(d); updateBorders(d);
+  // plano de corte acompanha o zoom: mais precisão de profundidade (sem cintilar de longe nem cortar de perto)
+  { const nn = Math.max(.01, Math.min(6, d * .015)); if (Math.abs(nn - camera.near) / camera.near > .15) { camera.near = nn; camera.far = Math.max(400, d * 40); camera.updateProjectionMatrix(); } }
   if (!RM) { seaTex.offset.x = t * .00002; seaTex.offset.y = Math.sin(t * .0004) * .02; foam.material.opacity = .6 + Math.sin(t * .002) * .2; }
   const now = performance.now(); let dirty = false;
   for (let i = pops.length - 1; i >= 0; i--) {
