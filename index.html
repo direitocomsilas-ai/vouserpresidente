@@ -1300,7 +1300,7 @@ function updateDots(d) {
   if (lastDotD > 0 && Math.abs(d - lastDotD) / lastDotD < .04) return;
   lastDotD = d;
   // bolinhas só na visão do Brasil/região; aproximando, some a bolinha e fica a cidade de verdade
-  const r = Math.min(3, Math.max(.05, d * .0042)), hideActive = d < 150;
+  const r = Math.min(1.6, Math.max(.04, d * .0019)), hideActive = d < 150;
   for (const c of cities) {
     const tot = TOT(c);
     let rr = tot ? r * (.42 + Math.min(1, tot / 10) * .9) * (c.cap ? 1.25 : 1) : FREEVIEW ? r * (c.cap ? .9 : .4) : 0; // tamanho pela população
