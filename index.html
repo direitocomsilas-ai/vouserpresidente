@@ -1342,8 +1342,54 @@ canvas.addEventListener('pointerup', e => {
     d = d / reach; if (c.cap) d *= .8;
     if (d < bd) { bd = d; best = c.i; }
   }
-  if (best >= 0) select(best);
+  if (best >= 0) { select(best); return; }
+  // nada perto: descobre o chão tocado → cidade sem dono (de perto) ou o estado
+  ndc.set(mx / w * 2 - 1, -(my / h) * 2 + 1); ray.setFromCamera(ndc, camera);
+  const gp = new THREE.Vector3(); if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -TOP), gp)) return;
+  let nc = null, nd = Infinity; for (const c of cities) { const d = (c.x - gp.x) ** 2 + (c.z - gp.z) ** 2; if (d < nd) { nd = d; nc = c; } }
+  if (!nc || Math.sqrt(nd) > 3.2) return; // fora do Brasil
+  v3.set(nc.x, TOP, nc.z).project(camera); const cx = (v3.x + 1) / 2 * w, cy = (1 - v3.y) / 2 * h;
+  if (curDist() < 26 && Math.hypot(cx - mx, cy - my) < 26) { select(nc.i); return; }
+  openStateCard(nc.uf);
 });
+// ---------- Card do estado (toque num estado do mapa) ----------
+function openStateCard(uf) {
+  tipDone();
+  const L = cities.filter(c => c.uf === uf), on = L.filter(c => TOT(c)).sort((a, b) => TOT(b) - TOT(a) || a.name.localeCompare(b.name));
+  const t = { b:0, r:0, n:0 }; on.forEach(c => { t.b += c.b; t.r += c.r; t.n += c.n || 0; }); const tt = t.b + t.r + t.n;
+  const cap = cities[capOf[uf]], gov = (() => { try { return elected('gov:' + uf); } catch (e) { return []; } })();
+  const bar = tt ? `<div class="stbar"><i style="width:${t.b / tt * 100}%;background:var(--blue)"></i><i style="width:${t.n / tt * 100}%;background:#9aa3b2"></i><i style="width:${t.r / tt * 100}%;background:var(--red)"></i></div>` : '';
+  openModal(`<h2>🗺️ ${html(STATE[uf])} <small style="font-size:.6em;color:var(--muted)">${uf}</small></h2>
+    <div class="stg"><div><b>${fmt(tt)}</b><small>moradores</small></div><div><b>${fmt(on.length)}</b><small>cidades com casa</small></div><div><b>${fmt(L.length - on.length)}</b><small>sem dono</small></div></div>
+    ${bar}${tt ? `<p class="note" style="margin:4px 0 0">🔵 direita ${fmt(t.b)} · ⚪ sem lado ${fmt(t.n)} · 🔴 esquerda ${fmt(t.r)}</p>` : `<p><b>Ninguém mora em ${html(STATE[uf])} ainda!</b> Comente sua cidade + estado no post e vire o primeiro fundador do estado.</p>`}
+    <p style="margin:8px 0 0">👑 Governador(a): ${gov.length ? gov.map(x => '<b>@' + html(x.h) + '</b>').join(', ') : '<span class="note">vago até a próxima eleição</span>'}</p>
+    <div class="mrow" style="margin-top:10px"><button class="chip y" id="stCap">⭐ ir para ${html(cap.name)}</button><button class="chip" id="stFree">🟢 cidades sem dono</button></div>
+    ${on.length ? `<div class="sec"><h3>Cidades com moradores</h3><div class="ppl">${on.slice(0, 120).map(c => `<button class="pp go" data-ci="${c.i}">${c.cap ? '⭐ ' : ''}${html(c.name)} · ${TOT(c)}</button>`).join('')}</div></div>` : ''}
+    <p class="note" style="margin-top:10px">Dica: toque numa cidade para ver as casas e os @. Aproxime o zoom para tocar nas cidades sem dono.</p>`, true);
+  const mc = $('mcard');
+  mc.querySelector('#stCap').onclick = () => { closeModal(); select(cap.i); };
+  mc.querySelector('#stFree').onclick = () => openFree(uf);
+  mc.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); select(+b.dataset.ci); });
+}
+// ---------- Dica: como tocar no estado ou na cidade ----------
+const tipCss = document.createElement('style');
+tipCss.textContent = `.stg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:6px 0 8px}.stg div{border:2px solid var(--ink);border-radius:12px;padding:6px 8px;text-align:center}.stg b{display:block;font-family:var(--display);font-weight:400;font-size:22px}.stg small{font-weight:800;color:var(--muted);font-size:11px}
+.stbar{display:flex;height:12px;border:2px solid var(--ink);border-radius:99px;overflow:hidden;background:var(--line)}
+#tapTip{position:fixed;left:12px;right:12px;margin:0 auto;width:fit-content;top:calc(150px + env(safe-area-inset-top));z-index:30;background:#fff;border:2.5px solid var(--ink);border-radius:16px;box-shadow:0 4px 0 var(--ink);padding:10px 38px 10px 14px;font:800 14px var(--body);max-width:min(92vw,420px);line-height:1.35;animation:tipIn .5s ease both}
+#tapTip b{font-weight:900}#tapTip .x{position:absolute;right:6px;top:6px;border:0;background:none;font:900 18px var(--body);cursor:pointer;padding:2px 6px}
+#tapTip .hand{display:inline-block;animation:tapH 1.1s ease-in-out infinite}
+@keyframes tapH{0%,100%{transform:translateY(0)}50%{transform:translateY(5px) scale(.92)}}@keyframes tipIn{from{opacity:0;transform:translateY(-12px)}}`;
+document.head.appendChild(tipCss);
+function tipDone() { const t = document.getElementById('tapTip'); if (t) t.remove(); try { localStorage.setItem('vsp_tip', '1'); } catch (e) {} }
+function showTapTip(force) {
+  let seen = ''; try { seen = localStorage.getItem('vsp_tip') || ''; } catch (e) {}
+  if ((seen && !force) || document.getElementById('tapTip')) return;
+  const d = document.createElement('div'); d.id = 'tapTip';
+  d.innerHTML = `<span class="hand">👆</span> <b>Toque num estado</b> para ver o resumo dele, ou <b>numa cidade</b> para ver as casas e os @. Arraste com 1 dedo · zoom com 2.<button class="x" aria-label="Fechar">✕</button>`;
+  d.querySelector('.x').onclick = tipDone; document.body.appendChild(d);
+}
+setTimeout(() => { if (!window.__STATE) showTapTip(); }, 2500);
+$('mcard').addEventListener('click', e => { if (e.target.id === 'hTip') { e.preventDefault(); closeModal(); showTapTip(true); } });
 
 // Pop
 const pops = [];
@@ -1673,6 +1719,7 @@ function placeRing() {
   selRing.position.set(c.x, TOP + .06, c.z); selRing.scale.setScalar(R); selRing.visible = true;
 }
 function select(ci, h = null, fly = true) {
+  if (typeof tipDone === 'function' && document.getElementById('tapTip')) tipDone();
   sel = ci; hlHandle = h; if (!h) picked = null; placeRing(); if (fly) focusCity(ci); renderPanel(); frameN = 0;
 }
 function closePanel() { sel = -1; hlHandle = null; picked = null; selRing.visible = false; $('panel').hidden = true; }
@@ -2663,10 +2710,11 @@ async function openElection_() {
     mc.innerHTML = head() + `<div class="sec"><h3>Quero me candidatar</h3>
       <div class="el-f"><input id="elH" placeholder="Coloque seu @ aqui" autocomplete="off">
       <select id="elO">${OFF_ORDER.map(o => `<option value="${o}">${OFFICES[o].ic} ${OFFICES[o].n}</option>`).join('')}</select>
-      <select id="elP"><option value="">Escolha seu partido</option>${PARTIES.map(p => `<option>${p}</option>`).join('')}</select>
+      <select id="elP"><option value="">Escolha seu partido</option>${PARTIDOS.length ? `<optgroup label="Partidos dos jogadores">${PARTIDOS.map(P => `<option>${html(partyLabel(P))}</option>`).join('')}</optgroup><optgroup label="Partidos do jogo">` : ''}${PARTIES.map(p => `<option>${p}</option>`).join('')}${PARTIDOS.length ? '</optgroup>' : ''}</select>
       <button class="chip y" id="elGo">enviar candidatura</button></div><div class="el-msg" id="elMsg"></div>
       <p class="note">Os partidos são do jogo (fictícios). A página confere e aprova as candidaturas; a lista sai sábado às 19h. Vagas por cargo: presidente ${OFFICES.pres.max}, governador ${OFFICES.gov.max}, senador ${OFFICES.sen.max}, deputado ${OFFICES.dep.max} por estado, prefeito ${OFFICES.pref.max} e vereador ${OFFICES.ver.max} por cidade.</p></div>`;
     bindX();
+    if (ME) { $('elH').value = ME; const mp = partyOf(ME); if (mp) $('elP').value = partyLabel(mp); }
     const info = () => { const h = cleanE($('elH').value), o = $('elO').value; if (!h) { $('elMsg').textContent = ''; return; } const why = canRun(h, o); const sc = raceScope(h, o); $('elMsg').textContent = why || `Você vai concorrer a ${raceName(raceKey(o, sc))}.`; $('elMsg').style.color = why ? 'var(--red)' : '#1f9d55'; };
     $('elH').oninput = info; $('elO').onchange = info;
     $('elGo').onclick = async () => {
@@ -2789,11 +2837,129 @@ function updateElecArrow() {
   arrowEl.querySelector('.bub').textContent = msg; arrowEl.style.left = (r.left + r.width / 2 - a.left) + 'px'; arrowEl.style.top = (r.top - a.top - 4) + 'px'; arrowEl.hidden = false;
 }
 document.getElementById('cElec').addEventListener('click', () => { try { localStorage.setItem('vsp_arrow', elecClock().ed + '|' + arrowMsg()); } catch (e) {} arrowEl.hidden = true; });
+
+// ======================= MINHA CONTA (entra só com o @) =======================
+// pedidos de apoio entre @ → com 1 apoio aceito você pode fundar seu partido; outros @ podem se filiar
+let ME = ''; try { ME = localStorage.getItem('vsp_me') || ''; } catch (e) {}
+let PARTIDOS = [], FILI = {}; // FILI: handle → partido_id
+const PCORES = ['#ffd23f', '#ff8a3d', '#e84a5f', '#c86bfa', '#3b6fe0', '#1fb5c9', '#2bb673', '#2b3442'];
+const partyLabel = P => `${P.sigla} - ${P.nome}`.slice(0, 40);
+const partyOf = h => { const id = FILI[h]; return id ? PARTIDOS.find(P => P.id === id) : null; };
+async function loadPartidos() {
+  if (!sb) return;
+  const [a, b] = await Promise.all([withT(sb.from('vsp_partidos').select('id,nome,sigla,cor,lado,fundador').order('id').limit(500)), withT(sb.from('vsp_filiados').select('handle,partido_id').limit(5000))]);
+  if (!a.error) PARTIDOS = a.data || [];
+  if (!b.error) { FILI = {}; (b.data || []).forEach(r => FILI[r.handle] = r.partido_id); }
+}
+const cCss = document.createElement('style');
+cCss.textContent = `.ac-hd{display:flex;align-items:center;gap:10px;border:2px solid var(--ink);border-radius:14px;padding:10px 12px;background:#fff8dd}.ac-hd .av{width:44px;height:44px;border-radius:50%;border:2px solid var(--ink);display:grid;place-items:center;font-size:22px;flex:none}
+.ac-hd b{font-family:var(--display);font-weight:400;font-size:20px;display:block;line-height:1.1}.ac-hd small{font-weight:800;color:var(--muted);font-size:12.5px}
+.ac-r{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-weight:800;font-size:14px}.ac-r .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.ac-r small{display:block;color:var(--muted);font-weight:700;white-space:normal}
+.ac-r .chip{font-size:13px;padding:3px 10px;box-shadow:0 2px 0 var(--ink)}.ptag{display:inline-block;border:2px solid var(--ink);border-radius:8px;padding:0 6px;font:900 11px var(--body);vertical-align:2px}
+.ac-cores{display:flex;gap:6px;flex-wrap:wrap}.ac-cores button{width:30px;height:30px;border-radius:50%;border:2px solid var(--ink);cursor:pointer}.ac-cores button.on{outline:3px solid var(--ink);outline-offset:2px}
+#cConta .bdg{display:inline-grid;place-items:center;min-width:19px;height:19px;border-radius:99px;background:var(--red);color:#fff;font:900 11px var(--body);margin-left:5px;padding:0 4px}`;
+document.head.appendChild(cCss);
+const withT = (pr, ms = 6000) => Promise.race([pr, new Promise(r => setTimeout(() => r({ error:{ message:'timeout' }, data:null }), ms))]);
+const accMsg = (el, ok, t) => { el.style.color = ok ? '#1f9d55' : 'var(--red)'; el.textContent = t; };
+function openConta() { try { return ME && players[ME] ? openConta_() : openLogin(); } catch (e) { console.error('CONTA', e); } }
+function openLogin(msg) {
+  openModal(`<h2>👤 Minha conta</h2>
+    <p>Para entrar, é só colocar o seu <b>@ do Instagram</b> que já tem casa no mapa. Na sua área você <b>pede apoio</b> a outros @, <b>recebe pedidos</b> e, com apoio aceito, <b>cria o seu partido</b>.</p>
+    <div class="el-f"><input id="acH" placeholder="seu @" autocomplete="off" autocapitalize="none" value="${html(ME)}"><button class="chip y" id="acGo">entrar</button></div>
+    <div class="el-msg" id="acMsg">${msg ? html(msg) : ''}</div>
+    <p class="note">Ainda não tem casa? Comente sua <b>cidade + estado</b> no post do <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a>.</p>`);
+  const go = () => { const h = cleanE($('acH').value); if (!h) return accMsg($('acMsg'), 0, 'Coloque seu @.');
+    if (!players[h]) return accMsg($('acMsg'), 0, `@${h} ainda não tem casa no mapa. Comente sua cidade + estado no post e volte aqui!`);
+    ME = h; try { localStorage.setItem('vsp_me', h); } catch (e) {} openConta_(); };
+  $('acGo').onclick = go; $('acH').onkeydown = e => { if (e.key === 'Enter') go(); }; setTimeout(() => $('acH').focus(), 50);
+}
+async function openConta_() {
+  const p = players[ME], ci = p.casas[0], c = cities[ci];
+  openModal(`<h2>👤 Minha conta</h2><p>Carregando…</p>`, true);
+  let rec = [], env = [], ok = true;
+  if (sb) {
+    const lp = loadPartidos();
+    const [a, b] = await Promise.all([withT(sb.from('vsp_apoio').select('id,from_h,to_h,msg,status,created_at').eq('to_h', ME).order('id', { ascending:false }).limit(200)),
+      withT(sb.from('vsp_apoio').select('id,from_h,to_h,msg,status,created_at').eq('from_h', ME).order('id', { ascending:false }).limit(200))]);
+    if (a.error || b.error) ok = false; rec = a.data || []; env = b.data || [];
+    await lp;
+  } else ok = false;
+  if ($('modal').hidden) return;
+  const pend = rec.filter(x => x.status === 'pendente'), apoiadores = env.filter(x => x.status === 'aceito'), espera = env.filter(x => x.status === 'pendente'), apoiei = rec.filter(x => x.status === 'aceito');
+  const meuP = partyOf(ME), fundei = PARTIDOS.find(P => P.fundador === ME);
+  const side = p.side === 'b' ? '🔵 direita' : p.side === 'r' ? '🔴 esquerda' : '⚪ sem lado';
+  const nMemb = id => Object.values(FILI).filter(x => x === id).length;
+  const who = h => players[h] ? ` <small>${html(cities[players[h].casas[0]].name)} - ${cities[players[h].casas[0]].uf} · Nv ${levelOf(players[h])}</small>` : ' <small>sem casa no mapa</small>';
+  const ptag = P => P ? `<span class="ptag" style="background:${P.cor};color:${P.cor === '#2b3442' ? '#fff' : 'var(--ink)'}">${html(P.sigla)}</span>` : '';
+  const partySec = fundei ? `<p>Você fundou o <b>${ptag(fundei)} ${html(fundei.nome)}</b> · ${nMemb(fundei.id)} filiado(s). Na candidatura de sábado ele já aparece na lista de partidos. Chame seus apoiadores para se filiar!</p>`
+    : apoiadores.length ? `<p>✅ Você tem <b>${apoiadores.length} apoio(s) aceito(s)</b>: já pode fundar o seu partido (fictício, do jogo).</p>
+      <div class="el-f"><input id="pN" maxlength="32" placeholder="Nome do partido (ex.: Partido do Bairro Novo)"><input id="pS" maxlength="6" placeholder="Sigla (2 a 6 letras, ex.: PBN)" style="text-transform:uppercase">
+      <div class="ac-cores" id="pC">${PCORES.map((k, i) => `<button data-c="${k}" class="${i ? '' : 'on'}" style="background:${k}" aria-label="cor"></button>`).join('')}</div>
+      <button class="chip y" id="pGo">🎉 fundar meu partido</button></div><div class="el-msg" id="pMsg"></div>
+      <p class="note">Use nome e sigla inventados: siglas de partidos reais não são aceitas.</p>`
+    : `<p>🔒 Para <b>fundar seu partido</b>, consiga <b>1 apoio aceito</b>: peça apoio a um amigo acima e espere ele aceitar.</p>`;
+  const lista = PARTIDOS.map(P => `<div class="ac-r"><span class="nm">${ptag(P)} <b>${html(P.nome)}</b><small>fundado por @${html(P.fundador)} · ${nMemb(P.id)} filiado(s)</small></span>${fundei ? '' : meuP && meuP.id === P.id ? `<button class="chip" data-sair="1">sair</button>` : `<button class="chip y" data-fil="${P.id}">filiar</button>`}</div>`).join('');
+  $('mcard').innerHTML = `<button class="mx" id="mx" aria-label="Fechar">✕</button><h2>👤 Minha conta</h2>
+    <div class="ac-hd"><span class="av" style="background:${p.side === 'b' ? 'var(--blue)' : p.side === 'r' ? 'var(--red)' : '#c9ced8'}">🏠</span><span style="flex:1;min-width:0"><b>@${html(ME)} ${ptag(meuP)}</b><small>${html(c.name)} - ${c.uf} · Nv ${levelOf(p)} · ${fmt(scoreOf(p))} pts · ${side}${meuP ? ' · ' + html(meuP.nome) : ''}</small></span></div>
+    <div class="mrow" style="margin-top:8px"><button class="chip" id="acCasa">📍 ver minha casa</button><button class="chip" id="acOut">sair da conta</button></div>
+    ${ok ? '' : '<p class="el-msg" style="color:var(--red)">A área de apoio está sendo ativada. Volte daqui a pouco!</p>'}
+    <div class="sec"><h3>🤝 Pedir apoio</h3><div class="el-f"><input id="apH" placeholder="@ de quem você quer apoio" autocomplete="off" autocapitalize="none"><input id="apM" maxlength="140" placeholder="mensagem (opcional): ex. me apoia para prefeito!"><button class="chip y" id="apGo">pedir apoio</button></div><div class="el-msg" id="apMsg"></div>
+    <p class="note">Avise a pessoa nos comentários ou no direct: ela entra aqui com o @ dela e aceita.</p></div>
+    <div class="sec"><h3>📥 Pedidos recebidos ${pend.length ? `<span class="ptag" style="background:var(--red);color:#fff">${pend.length}</span>` : ''}</h3>
+    ${pend.length ? pend.map(x => `<div class="ac-r"><span class="nm">@${html(x.from_h)}${who(x.from_h)}${x.msg ? `<small>“${html(x.msg)}”</small>` : ''}</span><button class="chip y" data-ok="${x.id}">aceitar</button><button class="chip" data-no="${x.id}">recusar</button></div>`).join('') : '<p class="note">Nenhum pedido novo.</p>'}
+    ${apoiei.length ? `<p class="note">Você apoia: ${apoiei.map(x => '@' + html(x.from_h)).join(', ')}</p>` : ''}</div>
+    <div class="sec"><h3>⭐ Meus apoiadores (${apoiadores.length})</h3>${apoiadores.length ? `<div class="ppl">${apoiadores.map(x => `<span class="pp">@${html(x.to_h)}</span>`).join('')}</div>` : '<p class="note">Ninguém ainda. Peça apoio aos seus amigos!</p>'}
+    ${espera.length ? `<p class="note">Esperando resposta: ${espera.map(x => '@' + html(x.to_h)).join(', ')}</p>` : ''}</div>
+    <div class="sec"><h3>🎌 Meu partido</h3>${partySec}</div>
+    ${PARTIDOS.length ? `<div class="sec"><h3>Partidos criados pelos jogadores</h3>${lista}</div>` : ''}
+    <p class="note" style="margin-top:10px">Pedido de apoio não é voto: o voto acontece na eleição de sábado/domingo. Tudo aqui é de brincadeira, sem ligação com partidos reais.</p>`;
+  const mc = $('mcard'); $('mx').onclick = closeModal;
+  $('acOut').onclick = () => { ME = ''; try { localStorage.removeItem('vsp_me'); } catch (e) {} contaBadge(); openLogin(); };
+  $('acCasa').onclick = () => { closeModal(); select(ci, ME); popHandle(ci, ME, 3); };
+  $('apGo').onclick = async () => {
+    const t = cleanE($('apH').value), m = $('apMsg');
+    if (!t) return accMsg(m, 0, 'Coloque o @ de quem você quer apoio.');
+    if (t === ME) return accMsg(m, 0, 'Não dá para pedir apoio a si mesmo 😄');
+    if (!players[t]) return accMsg(m, 0, `@${t} ainda não tem casa no mapa. Chame ele para comentar a cidade no post!`);
+    if (!sb) return accMsg(m, 0, 'Sem conexão agora.');
+    const { data, error } = await withT(sb.rpc('vsp_pedir_apoio', { p_from:ME, p_to:t, p_msg:$('apM').value || null }));
+    if (error) return accMsg(m, 0, 'Não deu para enviar agora. Tente de novo.');
+    if (data !== 'ok') return accMsg(m, 0, data);
+    accMsg(m, 1, `✅ Pedido enviado para @${t}! Avise ele para entrar em "minha conta" e aceitar.`); $('apH').value = ''; $('apM').value = '';
+  };
+  const resp = async (id, yes) => { if (!sb) return; const { data, error } = await sb.rpc('vsp_responder_apoio', { p_id:id, p_to:ME, p_ok:yes }); if (error || data !== 'ok') toast('Não deu agora, tente de novo.'); else toast(yes ? '🤝 Apoio aceito!' : 'Pedido recusado'); openConta_(); contaBadge(); };
+  mc.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => resp(+b.dataset.ok, true));
+  mc.querySelectorAll('[data-no]').forEach(b => b.onclick = () => resp(+b.dataset.no, false));
+  const fil = async id => { if (!sb) return; const { data, error } = await sb.rpc('vsp_filiar', { p_h:ME, p_partido:id }); if (error || data !== 'ok') toast(error ? 'Não deu agora.' : data); else toast(id ? '🎌 Filiado!' : 'Você saiu do partido'); openConta_(); };
+  mc.querySelectorAll('[data-fil]').forEach(b => b.onclick = () => fil(+b.dataset.fil));
+  mc.querySelectorAll('[data-sair]').forEach(b => b.onclick = () => fil(null));
+  const pc = mc.querySelector('#pC'); let cor = PCORES[0];
+  if (pc) pc.querySelectorAll('button').forEach(b => b.onclick = () => { cor = b.dataset.c; pc.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); });
+  const pg = mc.querySelector('#pGo');
+  if (pg) pg.onclick = async () => {
+    const n = $('pN').value.trim().replace(/\s+/g, ' '), s = $('pS').value.trim().toUpperCase(), m = $('pMsg');
+    if (n.length < 3) return accMsg(m, 0, 'Dê um nome ao partido (3 a 32 letras).');
+    if (!/^[A-Z0-9]{2,6}$/.test(s)) return accMsg(m, 0, 'A sigla precisa ter de 2 a 6 letras ou números.');
+    const { data, error } = await sb.rpc('vsp_criar_partido', { p_h:ME, p_nome:n, p_sigla:s, p_cor:cor, p_lado:p.side || 'n' });
+    if (error) return accMsg(m, 0, 'Não deu para criar agora. Tente de novo.');
+    if (data !== 'ok') return accMsg(m, 0, data);
+    toast('🎉 Partido fundado!'); fireworks && fireworks(); openConta_();
+  };
+}
+async function contaBadge() {
+  const b = document.getElementById('cConta'); if (!b) return;
+  let n = 0;
+  if (ME && sb) { const { count, error } = await withT(sb.from('vsp_apoio').select('id', { count:'exact', head:true }).eq('to_h', ME).eq('status', 'pendente')); if (!error) n = count || 0; }
+  b.innerHTML = (ME ? '👤 @' + html(ME.length > 14 ? ME.slice(0, 13) + '…' : ME) : '👤 minha conta') + (n ? `<span class="bdg">${n}</span>` : '');
+}
+{ const cb = document.createElement('button'); cb.className = 'chip'; cb.id = 'cConta'; cb.textContent = '👤 minha conta'; cb.onclick = openConta; $('cElec').before(cb); }
+if (!window.__STATE) { loadPartidos(); contaBadge(); setInterval(contaBadge, 120000); }
 addEventListener('resize', updateElecArrow); setTimeout(updateElecArrow, 2500);
 
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <p>Ainda tem cidade no Brasil sem dono, e a sua pode ser uma delas. Estamos construindo um Brasil virtual (e, quem sabe, um mundo).</p>
   <ul class="rules">
+    <li><b>👆</b><span><b>Toque num estado</b> do mapa para ver os moradores, a cidade líder e o governador. <b>Toque numa cidade</b> (ou numa casa) para ver os @. Arraste com 1 dedo, zoom com 2 dedos. <a href="#" id="hTip">mostrar dica</a></span></li>
     <li><b>🏠</b><span>Comente no post de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> o nome da sua <b>cidade + estado + lado</b> e ganhe uma casa (Nv 1 · casinha) com o seu @. Ex.: "Macaé RJ 🔵", "Recife Pernambuco 🔴" ou "Goiânia GO ⚪ sem lado". Sem lado escolhido, você fica ⚪ e pode escolher depois, uma vez.</span></li>
     <li><b>🚩</b><span>O primeiro de cada cidade vira <b>fundador para sempre</b>.</span></li>
     <li><b>+5 💬</b><span>Cada comentário no post.</span></li>
