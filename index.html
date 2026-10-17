@@ -1488,6 +1488,7 @@ function renderPop() {
     <ol>${ufs.map(u => { const x = per[u] || { t:0, b:0, r:0, n:0 }, w = x.t / mx * 100;
       return `<li><button data-uf="${u}" title="${STATE[u]}: ${fmt(x.t)} moradores"><span class="uf">${u}</span><span class="bar" style="width:${Math.max(4, w)}%">${x.t ? `<i style="width:${x.b / x.t * 100}%;background:var(--blue)"></i><i style="width:${x.n / x.t * 100}%;background:#9aa3b2"></i><i style="width:${x.r / x.t * 100}%;background:var(--red)"></i>` : ''}</span><b>${fmt(x.t)}</b></button></li>`; }).join('')}</ol>`;
   popEl.querySelectorAll('[data-uf]').forEach(b => b.onclick = () => select(capOf[b.dataset.uf]));
+  if (typeof addCloser === 'function') { addCloser(popEl, 'pop'); applyFold(); }
 }
 // ---------- Quadro da tela inicial: lados no Brasil, presidente até agora e top 3 cidades ----------
 const board = document.createElement('aside');
@@ -1557,7 +1558,38 @@ function renderBoard(B, R) {
   board.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => select(+b.dataset.ci));
   const ba = board.querySelector('#bdAll'); if (ba) ba.onclick = openCities;
   board.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
+  addCloser(board, 'board'); applyFold();
 }
+// ---------- Painéis recolhíveis: X para fechar "Brasil inteiro" e "População"; um botão pequeno reabre ----------
+const FOLD = { board:false, pop:false };
+try { const f = JSON.parse(localStorage.getItem('vsp_fold') || 'null'); if (f) Object.assign(FOLD, f); else if (innerWidth < 760) { FOLD.board = false; FOLD.pop = true; } } catch (e) { if (innerWidth < 760) FOLD.pop = true; }
+const foldCss = document.createElement('style');
+foldCss.textContent = `.fx{position:absolute;top:5px;right:5px;width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);background:var(--paper);font:900 13px var(--body);line-height:1;display:grid;place-items:center;cursor:pointer;z-index:2;padding:0}
+.fx:hover{background:var(--sun)}
+#board,#pop{padding-top:12px}
+#board h4:first-of-type,#pop h4:first-of-type{padding-right:28px}
+.fold-open{position:absolute;z-index:5;border:2px solid var(--ink);border-radius:99px;background:var(--paper);box-shadow:0 3px 0 var(--ink);font:900 13px var(--body);padding:6px 12px;cursor:pointer;display:none}
+.fold-open:hover{background:var(--sun)}
+#openBoard{left:max(16px,env(safe-area-inset-left,0px));top:200px}
+#openPop{right:calc(max(16px,env(safe-area-inset-right,0px)) + 72px);top:200px}
+@media (max-width:760px){#openBoard{top:calc(172px + env(safe-area-inset-top,0px));font-size:12px;padding:5px 10px}#openPop{right:max(16px,env(safe-area-inset-right,0px));top:calc(172px + env(safe-area-inset-top,0px));font-size:12px;padding:5px 10px}}
+#panel:not([hidden]) ~ .fold-open{display:none!important}
+@media (max-width:760px){.ttl{min-width:0!important;width:100%!important;max-width:100%!important;box-sizing:border-box;justify-content:space-between!important;padding:0!important}.ttl h1{font-size:clamp(22px,7vw,30px)!important;white-space:nowrap}}`;
+document.head.appendChild(foldCss);
+const openBoardBtn = document.createElement('button'); openBoardBtn.id = 'openBoard'; openBoardBtn.className = 'fold-open'; openBoardBtn.textContent = '🇧🇷 Brasil';
+const openPopBtn = document.createElement('button'); openPopBtn.id = 'openPop'; openPopBtn.className = 'fold-open'; openPopBtn.textContent = '👥 População';
+document.getElementById('app').appendChild(openBoardBtn); document.getElementById('app').appendChild(openPopBtn);
+function applyFold() {
+  board.style.display = FOLD.board ? 'none' : ''; popEl.style.display = FOLD.pop ? 'none' : '';
+  openBoardBtn.style.display = FOLD.board ? 'block' : 'none'; openPopBtn.style.display = FOLD.pop ? 'block' : 'none';
+  try { localStorage.setItem('vsp_fold', JSON.stringify(FOLD)); } catch (e) {}
+}
+function addCloser(el, k) {
+  const b = document.createElement('button'); b.className = 'fx'; b.textContent = '✕'; b.setAttribute('aria-label', 'Fechar');
+  b.onclick = e => { e.stopPropagation(); FOLD[k] = true; applyFold(); }; el.prepend(b);
+}
+openBoardBtn.onclick = () => { FOLD.board = false; applyFold(); };
+openPopBtn.onclick = () => { FOLD.pop = false; applyFold(); };
 function refresh() { rebuildAll(); renderHUD(); }
 
 $('cBsb').onclick = () => select(BSB);
