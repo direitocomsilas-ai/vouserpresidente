@@ -277,7 +277,7 @@ const GEO_TXT = document.getElementById('geo').textContent;
 const GEO = JSON.parse(GEO_TXT);
 const UFS = GEO.ufs, BR = GEO.out;
 const STATE = { AC:'Acre', AL:'Alagoas', AP:'Amapá', AM:'Amazonas', BA:'Bahia', CE:'Ceará', DF:'Distrito Federal', ES:'Espírito Santo', GO:'Goiás', MA:'Maranhão', MT:'Mato Grosso', MS:'Mato Grosso do Sul', MG:'Minas Gerais', PA:'Pará', PB:'Paraíba', PR:'Paraná', PE:'Pernambuco', PI:'Piauí', RJ:'Rio de Janeiro', RN:'Rio Grande do Norte', RS:'Rio Grande do Sul', RO:'Rondônia', RR:'Roraima', SC:'Santa Catarina', SP:'São Paulo', SE:'Sergipe', TO:'Tocantins' };
-const S = 4, OX = 52, OZ = 14, TOP = 1.25;
+const S = 8, OX = 52, OZ = 14, TOP = 1.25; // S: unidades por grau (maior = cidades mais espaçadas)
 ph('A-geo');
 const cities = GEO.m.split('|').map((row, i) => {
   const [name, u, lat, lon, cap] = row.split(';'), uf = UFS[+u];
@@ -654,10 +654,12 @@ const lvImg = n => LEVEL_IMG[n - 1] ? `<img src="${LEVEL_IMG[n - 1]}" alt="Níve
 const CS = .5; // escala das cidades (menores = mais espaço entre elas)
 const CELL = .3 * CS, LOT = .24 * CS, RMAX = 26;
 const mod4 = v => ((v % 4) + 4) % 4;
-const isStreet = (i, j) => mod4(i) === 2 || mod4(j) === 2;
+// quarteirões compridos (7 lotes no eixo x, 3 no eixo z), como bairro de verdade
+const stX = k => Math.abs(k) % 8 === 2, stZ = k => mod4(k) === 2;
+const isStreet = (i, j) => stX(i) || stZ(j);
 const SLOTS = [];
 for (let i = -RMAX; i <= RMAX; i++) for (let j = -RMAX; j <= RMAX; j++) {
-  if (Math.max(Math.abs(i), Math.abs(j)) <= 1 || isStreet(i, j)) continue;
+  if (Math.max(Math.abs(i), Math.abs(j)) <= 1 || isStreet(i, j) || (i >= 3 && i <= 5 && j >= -1 && j <= 1)) continue; // 3x3 lotes do ponto turístico da cidade
   SLOTS.push([i, j, Math.hypot(i, j) + hash(i + 99, j + 99) * .35]);
 }
 SLOTS.sort((a, b) => a[2] - b[2]);
@@ -689,7 +691,7 @@ const plazaGeo = merge([
   cyl(.12, .14, .04, 14, '#d5dbe2', 0, .03, 0), cyl(.09, .09, .045, 14, '#5fc6ee', 0, .035, 0), cyl(.02, .026, .14, 6, '#d5dbe2', 0, .03, 0)
 ]);
 const SIDE_COL = { b:new THREE.Color('#2f6fec'), r:new THREE.Color('#e5484d'), n:new THREE.Color('#9aa3b2') };
-const WHITE = new THREE.Color('#ffffff'), NEUTRAL = new THREE.Color('#f4f4f4'), FREE_COL = new THREE.Color('#3ad17a');
+const HOUSE_COL = new THREE.Color('#ffc93c'), WHITE = new THREE.Color('#ffffff'), NEUTRAL = new THREE.Color('#f4f4f4'), FREE_COL = new THREE.Color('#3ad17a');
 let FREEVIEW = false; // mostrar as cidades sem dono no mapa
 const NC = cities.length;
 const HCAP = [100000, 40000, 25000, 20000, 8000, 6000, 5000, 4000, 3000, 3000, 2500, 2000, 1500, 1200, 1000];
@@ -698,7 +700,7 @@ function IM(geo, mat, cap, shadow = true) { const m = new THREE.InstancedMesh(ge
 const HM = MODELS.map((g, L) => IM(g, vmat, HCAP[L]));
 const flagIM = IM(new THREE.BoxGeometry(.2, .13, .02), toon('#ffffff'), FCAP, false);
 const plazaIM = IM(plazaGeo, vmat, NC);
-const groundIM = IM(new THREE.BoxGeometry(1, .03, 1), toon('#d7ecbf'), NC, false);
+const groundIM = IM(new THREE.BoxGeometry(1, .03, 1), toon('#8fcf5a'), NC, false);
 const roadIM = IM(new THREE.BoxGeometry(1, .02, 1), toon('#8a909a'), RCAP, false);
 const poleIM = IM(new THREE.CylinderGeometry(.022, .022, 1, 6), toon('#3a3f4b'), NC);
 const cflagIM = IM(new THREE.BoxGeometry(.4, .25, .03), toon('#ffffff'), NC);
@@ -801,6 +803,8 @@ function rebuildAll() {
       const uf = cities[ci].uf; if (!kings[uf] || sc > kings[uf].sc) kings[uf] = { h, sc };
     }
   }
+  for (const [h, p] of Object.entries(players)) { if (p.side) continue; const sc = scoreOf(p); for (const ci of p.casas) { const uf = cities[ci].uf; if (!kings[uf] || sc > kings[uf].sc) kings[uf] = { h, sc }; } }
+  Object.entries(OFF.gov).forEach(([uf, h]) => { if (h) kings[uf] = { h, sc:Infinity, gov:true }; });
   byCity.forEach(l => l.sort((a, b) => b.sc - a.sc));
   const cnt = new Array(15).fill(0); let fc = 0, ac = 0, rc = 0;
   HREF = MODELS.map(() => []);
@@ -808,7 +812,7 @@ function rebuildAll() {
   active = [];
   for (const c of cities) {
     const tot = TOT(c);
-    { const ds = domSide(c); dotIM.setColorAt(c.i, !tot ? (FREEVIEW ? FREE_COL : WHITE) : !ds ? WHITE : SIDE_COL[ds]); }
+    { const ds = domSide(c); dotIM.setColorAt(c.i, !tot ? (FREEVIEW ? FREE_COL : WHITE) : !ds || ds === 'n' ? HOUSE_COL : SIDE_COL[ds]); }
     if (!tot) { c.list = []; c.ref = []; continue; }
     active.push(c.i);
     c.list = cityHouses(c); c.ref = []; c.fref = [];
@@ -822,9 +826,9 @@ function rebuildAll() {
     const size = (2 * R + 1.6) * CELL;
     m4.compose(p4.set(c.x, TOP + .015, c.z), q4, s4.set(size, 1, size)); groundIM.setMatrixAt(ac, m4);
     for (let k = -R - 1; k <= R + 1; k++) {
-      if (mod4(k) !== 2 || rc + 2 > RCAP) continue;
-      m4.compose(p4.set(c.x, GY + .005, c.z + k * CELL), q4, s4.set(size, 1, CELL * .82)); roadIM.setMatrixAt(rc++, m4);
-      m4.compose(p4.set(c.x + k * CELL, GY + .006, c.z), q4, s4.set(CELL * .82, 1, size)); roadIM.setMatrixAt(rc++, m4);
+      if (rc + 2 > RCAP) continue;
+      if (stZ(k)) { m4.compose(p4.set(c.x, GY + .005, c.z + k * CELL), q4, s4.set(size, 1, CELL * .82)); roadIM.setMatrixAt(rc++, m4); }
+      if (stX(k)) { m4.compose(p4.set(c.x + k * CELL, GY + .006, c.z), q4, s4.set(CELL * .82, 1, size)); roadIM.setMatrixAt(rc++, m4); }
     }
     m4.compose(p4.set(c.x, GY, c.z), q4, c.i === capOf.DF ? s4.set(0, 0, 0) : s4.set(CS, CS, CS)); plazaIM.setMatrixAt(ac, m4);
     const ph = (c.cap ? 1.1 : .7) * CS, off = .36 * CS, fs = (c.cap ? 1 : .7) * CS;
@@ -839,7 +843,7 @@ function rebuildAll() {
   [flagIM, cflagIM, dotIM].forEach(m => { if (m.instanceColor) m.instanceColor.needsUpdate = true; });
   lastDotD = -1;
   updateTrees();
-  updateLandmarks();
+  updateLandmarks(); updateMarcos();
   if (typeof updateFans === 'function') updateFans();
   if (sel >= 0) placeRing();
 }
@@ -911,6 +915,7 @@ const CONGRESSO = (() => {
   return g;
 })();
 // ---------- Pontos turísticos: os novos ficam EM OBRA até a cidade ter 100 moradores ----------
+// (os nomeados ficam abaixo; o ponto turístico de toda cidade vem depois)
 // Para adicionar um novo: addLandmark(ci, 'Nome', grupo)  → começa em obra e vai subindo conforme chegam moradores.
 const OBRA_META = 100;
 renderer.localClippingEnabled = true;
@@ -975,6 +980,45 @@ function updateLandmarks() {
     if (!done) obraSign(lm, n);
   });
 }
+
+// ---------- Ponto turístico de toda cidade: começa em obra e vai subindo até inaugurar ----------
+// capitais (cidades grandes): palácio, meta 100 moradores · demais: igreja matriz ou hospital, meta 20
+const MARCO_META_GRANDE = 100, MARCO_META_PEQ = 20;
+const MARCO_GEO = {
+  igreja: merge([box(.5, .42, .78, '#fbf6ea', 0, 0, .05), gable(.56, .3, .82, '#e0703c', 0, .42, .05), box(.24, .95, .24, '#fbf6ea', 0, 0, -.38),
+    cone(.19, .34, 4, '#e0703c', 0, .95, -.38, Math.PI / 4), box(.03, .16, .03, '#ffc93c', 0, 1.29, -.38), box(.1, .02, .03, '#ffc93c', 0, 1.36, -.38),
+    box(.12, .2, .02, '#7a4a2b', 0, 0, -.51), box(.1, .1, .02, '#7fc8ee', -.14, .2, .45), box(.1, .1, .02, '#7fc8ee', .14, .2, .45)]),
+  hospital: merge([box(.62, 1.25, .52, '#ffffff', 0, 0, 0), ...[.25, .5, .75, 1.0].map(y => box(.64, .08, .54, '#7fc8ee', 0, y, 0)),
+    box(.2, .06, .02, '#e5484d', 0, 1.05, -.27), box(.06, .2, .02, '#e5484d', 0, .98, -.27), box(.7, .05, .6, '#cfd6df', 0, 1.25, 0), box(.2, .22, .04, '#7fc8ee', 0, 0, -.27)]),
+  palacio: merge([box(1.0, .08, .7, '#e8dcc0', 0, 0, 0), box(.9, .36, .56, '#fff7e0', 0, .08, 0), box(.96, .06, .62, '#e8dcc0', 0, .44, 0),
+    ...[-.36, -.18, 0, .18, .36].map(x => cyl(.035, .035, .34, 8, '#ffffff', x, .08, -.31)), cyl(.16, .2, .14, 12, '#fff7e0', 0, .5, 0),
+    P(new THREE.SphereGeometry(.17, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), '#2f9e6a', 0, .64, 0), box(.02, .26, .02, '#3a3f4b', 0, .8, 0), box(.14, .09, .01, '#2f9e6a', .07, .97, 0)])
+};
+const MARCO_SITE = merge([box(1.12, .1, .03, '#ff8a1f', 0, 0, -.56), box(1.12, .1, .03, '#ff8a1f', 0, 0, .56), box(.03, .1, 1.12, '#ff8a1f', -.56, 0, 0), box(.03, .1, 1.12, '#ff8a1f', .56, 0, 0),
+  box(1.06, .025, 1.06, '#a8743f', 0, .005, 0), box(.05, 1.55, .05, '#ffc93c', .5, 0, -.5), box(1.05, .05, .05, '#ffc93c', .15, 1.5, -.5), box(.12, .1, .1, '#3a3a3e', .62, 1.42, -.5), box(.01, .4, .01, '#3a3a3e', -.32, 1.12, -.5)]);
+const MARCO_S = 3 * CELL * .92; // ocupa os 3x3 lotes reservados
+const MARCO_H = { igreja:1.38, hospital:1.31, palacio:1.0 };
+const MARCO_KIND = ['igreja', 'hospital', 'palacio'], MARCO_NOME = { igreja:'Igreja Matriz', hospital:'Hospital Municipal', palacio:'Palácio do Governo' };
+const marcoIM = MARCO_KIND.map(k => IM(MARCO_GEO[k], vmat, NC)), siteIM = IM(MARCO_SITE, vmat, NC);
+const marcoKind = c => c.cap ? 'palacio' : (hash(c.i, 77) < .5 ? 'igreja' : 'hospital');
+function marcoInfo(c) {
+  const kind = marcoKind(c), need = c.cap ? MARCO_META_GRANDE : MARCO_META_PEQ, n = TOT(c);
+  return { kind, need, n, name:kind === 'palacio' ? `Palácio de ${c.name}` : MARCO_NOME[kind], pct:Math.min(100, Math.floor(n / need * 100)), done:n >= need };
+}
+const hasNamedLm = ci => LANDMARKS.some(l => l.ci === ci);
+function updateMarcos() {
+  const cnt = [0, 0, 0]; let ns = 0;
+  for (const ci of active) {
+    const c = cities[ci]; if (hasNamedLm(ci) || ci === BSB) continue;
+    const mi = marcoInfo(c), K = MARCO_KIND.indexOf(mi.kind), pr = mi.done ? 1 : .08 + .74 * Math.min(1, mi.n / mi.need);
+    const x = c.x + 4 * CELL, z = c.z;
+    // a obra "sobe do chão": o prédio fica enterrado e vai aparecendo conforme chegam moradores
+    m4.compose(p4.set(x, GY - (1 - pr) * MARCO_H[mi.kind] * MARCO_S, z), q4, s4.set(MARCO_S, MARCO_S, MARCO_S)); marcoIM[K].setMatrixAt(cnt[K]++, m4);
+    if (!mi.done) { m4.compose(p4.set(x, GY, z), q4, s4.set(MARCO_S * .94, MARCO_S, MARCO_S * .94)); siteIM.setMatrixAt(ns++, m4); }
+  }
+  marcoIM.forEach((m, K) => { m.count = cnt[K]; m.instanceMatrix.needsUpdate = true; });
+  siteIM.count = ns; siteIM.instanceMatrix.needsUpdate = true;
+}
 // ---------- Afasta as cidades vizinhas para que bairros, ruas e pontos turísticos não fiquem um em cima do outro ----------
 // Cada cidade é um quadrado (casas + ruas) e cada ponto turístico um retângulo preso à sua cidade.
 // As cidades maiores (e as capitais) se movem menos; as menores dão espaço.
@@ -986,7 +1030,7 @@ function spreadCities() {
   cities.forEach(c => { if (c.gx === undefined) { c.gx = c.x; c.gz = c.z; } c.x = c.gx; c.z = c.gz; });
   const GAP = CELL * .9, items = [], W = new Map();
   cities.forEach(c => { const t = TOT(c); if (!t) return;
-    const h = (radiusOf(Math.min(NS, t)) + .8) * CELL + GAP / 2;
+    const h = (Math.max(5.6, radiusOf(Math.min(NS, t))) + .8) * CELL + GAP / 2; // inclui o ponto turístico (lotes x 3..5)
     items.push({ c, ox:0, oz:0, hx:h, hz:h }); W.set(c.i, Math.min(NS, t) + (c.cap ? 40 : 0) + 1); });
   LANDMARKS.forEach(lm => { const c = cities[lm.ci], t = TOT(c); if (!W.has(c.i)) W.set(c.i, 1e9);   // cidade vazia: o ponto turístico fica fixo
     // ponto turístico ao lado da cidade: quando a cidade cresce, ele é empurrado para fora do bairro
@@ -1292,7 +1336,8 @@ let poolCities = [], frameN = 0;
 // ---------- Câmera ----------
 function frameCamera() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', frameCamera); frameCamera();
-const fitDist = () => span * (camera.aspect < .8 ? 2.25 : 1.3);
+const fitDist = () => span * (camera.aspect < .8 ? 2.75 : 1.3);
+controls.maxDistance = span * 3.3;
 const TILT = .32;
 camera.position.copy(CENTER).add(new THREE.Vector3(0, Math.cos(TILT), Math.sin(TILT)).multiplyScalar(fitDist()));
 controls.target.copy(CENTER);
@@ -1304,7 +1349,7 @@ function flyTo(t, d) {
 const curDist = () => camera.position.distanceTo(controls.target);
 function focusCity(ci, d) { const c = cities[ci]; d = d || Math.max(2.2, ((TOT(c) ? c.rad : 2) + 2) * CELL * 4.2); flyTo(new THREE.Vector3(c.x, TOP, c.z + (innerWidth < 760 ? 1.6 : 0)), Math.min(curDist(), d)); }
 $('zin').onclick = () => flyTo(controls.target, Math.max(.7, curDist() * .5));
-$('zout').onclick = () => flyTo(controls.target, Math.min(650, curDist() * 1.8));
+$('zout').onclick = () => flyTo(controls.target, Math.min(controls.maxDistance, curDist() * 1.8));
 $('zall').onclick = () => { closePanel(); if (typeof clearHighlight === 'function') clearHighlight(); flyTo(CENTER, fitDist()); };
 
 // Toque: escolhe a cidade mais próxima na tela
@@ -1419,15 +1464,15 @@ function cityTraffic(c) {
   const R = c.rad || 2, key = c.i;
   let T = traffic.get(key);
   if (T && T.R === R) return T;
-  const lines = []; for (let k = -R - 1; k <= R + 1; k++) if (mod4(k) === 2) lines.push(k);
+  const lines = [], linesX = []; for (let k = -R - 1; k <= R + 1; k++) { if (stZ(k)) lines.push(k); if (stX(k)) linesX.push(k); }
   const half = (2 * R + 1.6) * CELL / 2, cars = [];
   let seed2 = c.i * 7919 + 13; const rr = () => { seed2 = (seed2 * 16807) % 2147483647; return seed2 / 2147483647; };
   const n = Math.min(26, 2 + lines.length * 4);
   for (let i = 0; i < n && lines.length; i++) {
-    const ax = rr() < .5 ? 'x' : 'z', k = lines[Math.floor(rr() * lines.length)], dir = rr() < .5 ? 1 : -1;
+    const ax = rr() < .5 || !linesX.length ? 'x' : 'z', LL = ax === 'x' ? lines : linesX, k = LL[Math.floor(rr() * LL.length)], dir = rr() < .5 ? 1 : -1;
     cars.push({ ax, k, dir, u:(rr() * 2 - 1) * half, v:.18 + rr() * .1, col:CAR_COLS[Math.floor(rr() * CAR_COLS.length)], sp:0 });
   }
-  T = { R, lines, half, cars }; traffic.set(key, T); return T;
+  T = { R, lines, linesX, half, cars }; traffic.set(key, T); return T;
 }
 // fase do semáforo: eixo x verde, amarelo, depois eixo z verde, amarelo (ciclo de 7 s)
 const lightState = (t, ax) => { const ph = (t / 1000) % 7, xg = ph < 3, xy = ph >= 3 && ph < 3.5, zg = ph >= 3.5 && ph < 6.5; return ax === 'x' ? (xg ? 'g' : xy ? 'y' : 'r') : (zg ? 'g' : !xg && !xy && !zg ? 'y' : 'r'); };
@@ -1441,7 +1486,7 @@ function updateTraffic(t, d) {
     const c = cities[ci]; if (Math.abs(c.x - tg.x) > reach || Math.abs(c.z - tg.z) > reach) continue;
     const T = cityTraffic(c);
     // semáforos: um para cada eixo em cada cruzamento
-    for (const a of T.lines) for (const b of T.lines) {
+    for (const a of T.linesX) for (const b of T.lines) {
       if (nl + 2 > LIGHT_CAP) break;
       const ix = c.x + a * CELL, iz = c.z + b * CELL, o = HALFROAD + .012;
       [['x', ix - o, iz + o], ['z', ix + o, iz + o]].forEach(([ax, lx, lz]) => {
@@ -1457,7 +1502,7 @@ function updateTraffic(t, d) {
     lanes.forEach(L => L.forEach((car, i) => {
       // para no sinal vermelho/amarelo antes do cruzamento
       let stop = false;
-      if (lightState(t, car.ax) !== 'g') for (const k2 of T.lines) { const ip = k2 * CELL, dist = (ip - car.u) * car.dir - HALFROAD; if (dist > 0 && dist < .05) { stop = true; break; } }
+      if (lightState(t, car.ax) !== 'g') for (const k2 of (car.ax === 'x' ? T.linesX : T.lines)) { const ip = k2 * CELL, dist = (ip - car.u) * car.dir - HALFROAD; if (dist > 0 && dist < .05) { stop = true; break; } }
       // distância do carro da frente
       const ahead = L[i + 1]; if (ahead && (ahead.u - car.u) * car.dir < .11) stop = true;
       const target = stop ? 0 : car.v; car.sp += (target - car.sp) * Math.min(1, dt * 6);
@@ -1524,12 +1569,13 @@ function setText(el, n, k, f) {
   if (el._f !== f) { el._f = f; el.lastChild.innerHTML = f; el.lastChild.hidden = !f; }
   el.classList.toggle('sel', el.ci === sel);
 }
+const marcoTxt = c => { if (hasNamedLm(c.i) || c.i === BSB || !TOT(c)) return ''; const m = marcoInfo(c); return m.done ? '' : `🏗️ ${m.name} · ${m.pct}%`; };
 function drawLabels(d) {
   const w = canvas.clientWidth, h = canvas.clientHeight, near = d < 45;
   capLabs.forEach(el => {
     const c = cities[el.ci], kg = kings[c.uf], made = TOT(c) > 0, isSel = el.ci === sel;
     if (near && !made && !isSel) { el.hidden = true; return; }
-    setText(el, near || isSel ? c.name : c.uf, !near && kg ? '👑 ' + showH(kg.h) : '', (near || isSel) && made ? founderHTML(c) : '');
+    setText(el, near || isSel ? c.name : c.uf, !near && kg ? '👑 ' + showH(kg.h) : (near || isSel) && made ? marcoTxt(c) : '', (near || isSel) && made ? founderHTML(c) : '');
     placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .7 : .8);
   });
   if (frameN++ % 10 === 0) {
@@ -1545,7 +1591,7 @@ function drawLabels(d) {
     const ci = poolCities[k];
     if (ci === undefined) { el.hidden = true; el.ci = -1; return; }
     const c = cities[ci]; el.ci = ci;
-    setText(el, c.name, '', near || ci === sel ? founderHTML(c) : '');
+    setText(el, c.name, near || ci === sel ? marcoTxt(c) : '', near || ci === sel ? founderHTML(c) : '');
     placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .6 : .8);
   });
 }
@@ -1681,7 +1727,7 @@ function renderBoard(B, R) {
 }
 // ---------- Painéis recolhíveis: X para fechar "Brasil inteiro" e "População"; um botão pequeno reabre ----------
 const FOLD = { board:false, pop:false };
-try { const f = JSON.parse(localStorage.getItem('vsp_fold') || 'null'); if (f) Object.assign(FOLD, f); else if (innerWidth < 760) { FOLD.board = false; FOLD.pop = true; } } catch (e) { if (innerWidth < 760) FOLD.pop = true; }
+try { const f = JSON.parse(localStorage.getItem('vsp_fold2') || 'null'); if (f) Object.assign(FOLD, f); else { FOLD.board = true; FOLD.pop = true; } } catch (e) { FOLD.board = FOLD.pop = true; }
 const foldCss = document.createElement('style');
 foldCss.textContent = `.fx{position:absolute;top:5px;right:5px;width:26px;height:26px;border-radius:50%;border:2px solid var(--ink);background:var(--paper);font:900 13px var(--body);line-height:1;display:grid;place-items:center;cursor:pointer;z-index:2;padding:0}
 .fx:hover{background:var(--sun)}
@@ -1701,8 +1747,9 @@ const openPopBtn = document.createElement('button'); openPopBtn.id = 'openPop'; 
 document.getElementById('app').appendChild(openBoardBtn); document.getElementById('app').appendChild(openPopBtn);
 function applyFold() {
   board.style.display = FOLD.board ? 'none' : ''; popEl.style.display = FOLD.pop ? 'none' : '';
-  openBoardBtn.style.display = FOLD.board ? 'block' : 'none'; openPopBtn.style.display = FOLD.pop ? 'block' : 'none';
-  try { localStorage.setItem('vsp_fold', JSON.stringify(FOLD)); } catch (e) {}
+  openBoardBtn.style.display = 'none'; openPopBtn.style.display = 'none';
+  try { localStorage.setItem('vsp_fold2', JSON.stringify(FOLD)); } catch (e) {}
+  const dc = document.getElementById('cDados'); if (dc) dc.classList.toggle('y', !FOLD.board || !FOLD.pop);
 }
 function addCloser(el, k) {
   const b = document.createElement('button'); b.className = 'fx'; b.textContent = '✕'; b.setAttribute('aria-label', 'Fechar');
@@ -3097,10 +3144,10 @@ function updatePresCard() {
   const P = curPres(), k = elecClock();
   if (P && players[P.h]) {
     const p = players[P.h], c = cities[p.casas[0]];
-    presCard.className = 'card ' + (p.side || 'n');
+    presCard.className = 'card ' + (p.side || 'n') + (presCard.parentNode && presCard.parentNode.id === 'bottom' ? ' inl' : '');
     presCard.innerHTML = `<span class="pi">${lvImg(levelOf(p))}<span class="cr">👑</span></span><span class="pt"><small>Presidente do Brasil</small><b>@${html(P.h)}</b><i>${html(P.party || '')}${c ? ' · ' + html(c.uf) : ''}</i></span><span class="pgo">›</span>`;
   } else {
-    presCard.className = 'card vago';
+    presCard.className = 'card vago' + (presCard.parentNode && presCard.parentNode.id === 'bottom' ? ' inl' : '');
     const st = k.fase === 'candidaturas' ? 'candidaturas abertas!' : k.fase === 'votacao' ? 'votação aberta!' : 'eleição no sábado';
     presCard.innerHTML = `<span class="pi">🏛️</span><span class="pt"><small>Presidente do Brasil</small><b>Cadeira vaga</b><i>${st} · ver governo</i></span><span class="pgo">›</span>`;
   }
@@ -3177,7 +3224,7 @@ function highlightState(uf, fly = true) {
   bar.innerHTML = `🔦 ${html(STATE[uf])} <button id="hlInfo">resumo</button><button id="hlGov">governo</button><button class="x" id="hlX">✕</button>`;
   document.getElementById('app').appendChild(bar);
   $('hlInfo').onclick = () => openStateCard(uf); $('hlGov').onclick = () => openGoverno(uf); $('hlX').onclick = clearHighlight;
-  if (fly && isFinite(mnx)) { const cx = (mnx + mxx) / 2, cz = (mnz + mxz) / 2, ext = Math.max(mxx - mnx, mxz - mnz); flyTo(new THREE.Vector3(cx, TOP, cz - ext * (innerWidth < 760 ? .3 : .2)), Math.max(14, ext * (innerWidth < 760 ? 3.6 : 2.6))); }
+  if (fly && isFinite(mnx)) { const cx = (mnx + mxx) / 2, cz = (mnz + mxz) / 2, ext = Math.max(mxx - mnx, mxz - mnz); flyTo(new THREE.Vector3(cx, TOP, cz - ext * (innerWidth < 760 ? .12 : .2)), Math.max(14, ext * (innerWidth < 760 ? 3.6 : 2.6))); }
 }
 function drawStateTags() {
   if (!HL) return; const r = canvas.getBoundingClientRect(), placed = [];
@@ -3188,6 +3235,55 @@ function drawStateTags() {
     placed.push([x, y, w]); e.style.left = x + 'px'; e.style.top = y + 'px'; e.style.zIndex = 10 - i; });
 }
 window.__presReady = true; updatePresCard();
+
+
+// ======================= INTERFACE LIMPA (mapa em primeiro lugar) =======================
+const uiCss = document.createElement('style');
+uiCss.textContent = `#top .ig,#ticker,#pres,#openBoard,#openPop{display:none!important}
+#cBsb,#cLevels,#cCities,#cApp,#cIg{display:none!important}
+#ctaTop{pointer-events:auto;display:inline-flex;align-items:center;gap:8px;justify-content:center;max-width:min(560px,100%);border:4px solid var(--ink);border-radius:99px;background:var(--sun);padding:8px 20px;font:900 16px var(--body);color:var(--ink);cursor:pointer;box-shadow:0 5px 0 var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#ctaTop:active{transform:translateY(3px);box-shadow:0 2px 0 var(--ink)}#ctaTop .tm{font-weight:800;opacity:.75}
+#count{font-size:clamp(24px,5.4vw,36px)!important;-webkit-text-stroke:7px var(--ink)!important;letter-spacing:.01em}
+#addHouse{pointer-events:auto;border:4px solid var(--ink);border-radius:99px;background:var(--paper);padding:9px 26px;font:900 17px var(--body);cursor:pointer;box-shadow:0 5px 0 var(--ink);white-space:nowrap}
+#addHouse:active{transform:translateY(3px);box-shadow:0 2px 0 var(--ink)}
+.chips .chip{font-family:var(--body);font-weight:900}
+#cMore{font-family:var(--body);font-weight:900}
+.mais{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.mais button{border:3px solid var(--ink);border-radius:16px;background:#fff;padding:12px;font:900 15px var(--body);cursor:pointer;box-shadow:0 3px 0 var(--ink);text-align:left}.mais button:hover{background:var(--sun)}.mais small{display:block;font-weight:700;color:var(--muted);font-size:12px}
+#presCard.inl{position:static;width:auto;max-width:100%;pointer-events:auto;padding:4px 12px 4px 5px;border-radius:99px;gap:7px;border-width:3px}
+#presCard.inl .pi{width:30px;height:30px;border-radius:50%;font-size:16px}#presCard.inl .pi .cr{display:none}
+#presCard.inl small{display:inline;font-size:9px;margin-right:5px}#presCard.inl b{display:inline;font-size:15px}#presCard.inl i{display:none}#presCard.inl .pgo{display:inline;font-size:14px}
+#presCard.inl .pt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:760px){.nat{display:none!important}#ctaTop{font-size:14px;padding:7px 14px;border-width:3px}#addHouse{font-size:15px;padding:7px 20px;border-width:3px}
+ #elecArrow{display:none!important}#zoom{bottom:calc(215px + env(safe-area-inset-bottom,0px))!important}
+ #board{top:calc(205px + env(safe-area-inset-top,0px))!important}#hlBar{top:calc(205px + env(safe-area-inset-top,0px))!important}}`;
+document.head.appendChild(uiCss);
+// botão chamativo embaixo da busca: muda com a fase da eleição
+const ctaTop = document.createElement('button'); ctaTop.id = 'ctaTop'; $('sform').after(ctaTop);
+function updateCtaTop() {
+  const k = elecClock(), [, t] = k.next;
+  if (k.fase === 'candidaturas') { ctaTop.innerHTML = `🗳️ Candidaturas abertas <span class="tm">· fecha em ${dur(t - k.now)}</span>`; ctaTop.onclick = openElection; }
+  else if (k.fase === 'votacao') { ctaTop.innerHTML = `🗳️ Votação aberta: vote agora <span class="tm">· ${dur(t - k.now)}</span>`; ctaTop.onclick = openElection; }
+  else { ctaTop.innerHTML = '🏠 ganhar minha casa na minha cidade'; ctaTop.onclick = () => openJoin('casa'); }
+}
+updateCtaTop(); setInterval(updateCtaTop, 30000);
+// embaixo: chamada principal + atalhos enxutos
+const addHouse = document.createElement('button'); addHouse.id = 'addHouse'; addHouse.textContent = '＋ sua casa no mapa'; addHouse.onclick = () => openJoin('casa');
+document.querySelector('#bottom .chips').before(addHouse);
+{ const ch = document.querySelector('#bottom .chips');
+  const seg = document.createElement('button'); seg.className = 'chip'; seg.id = 'cSeg'; seg.textContent = 'segue'; seg.onclick = () => openFollow(); ch.prepend(seg);
+  const dd = document.createElement('button'); dd.className = 'chip'; dd.id = 'cDados'; dd.textContent = 'dados'; dd.onclick = () => { const open = FOLD.board && FOLD.pop; FOLD.board = FOLD.pop = !open; applyFold(); }; ch.append(dd);
+  const mm = document.createElement('button'); mm.className = 'chip'; mm.id = 'cMore'; mm.textContent = '⋯'; mm.setAttribute('aria-label', 'Mais opções'); mm.onclick = openMais; ch.append(mm);
+  applyFold(); }
+function openMais() {
+  const it = [['🏙️ Cidades', 'todas as cidades com casa', () => $('cCities').click()], ['🏛️ Governo', 'presidente e cargos por estado', () => openGoverno()], ['🗺️ Brasília', 'a capital do Brasil', () => { closeModal(); $('cBsb').click(); }],
+    ['🏠 Níveis', 'de casinha a arranha-céu', () => $('cLevels').click()], ['⭐ Seguir', '@vouserpresidente', () => window.open('https://www.instagram.com/vouserpresidente/', '_blank', 'noopener')], ['❓ Como jogar', 'regras e pontos', () => $('helpBtn').click()]];
+  const app = document.getElementById('cApp'); if (app && !app.hidden) it.push(['📲 Instalar app', 'na tela do celular', () => app.click()]);
+  openModal(`<h2>Mais</h2><div class="mais">${it.map((x, i) => `<button data-i="${i}">${x[0]}<small>${x[1]}</small></button>`).join('')}</div>`);
+  $('mcard').querySelectorAll('[data-i]').forEach(b => b.onclick = () => it[+b.dataset.i][2]());
+}
+// no celular, o presidente vira uma pílula em cima da contagem (no computador fica o cartão à esquerda)
+function placePres() { const m = innerWidth < 760; if (m && presCard.parentNode !== $('bottom')) { $('bottom').prepend(presCard); presCard.classList.add('inl'); } else if (!m && presCard.parentNode === $('bottom')) { $('app').appendChild(presCard); presCard.classList.remove('inl'); } }
+placePres(); addEventListener('resize', placePres);
 
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <p>Ainda tem cidade no Brasil sem dono, e a sua pode ser uma delas. Estamos construindo um Brasil virtual (e, quem sabe, um mundo).</p>
