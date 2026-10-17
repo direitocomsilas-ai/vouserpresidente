@@ -685,6 +685,23 @@ const LEVEL_DEF = [
 const MODELS = LEVEL_DEF.map(d => merge(d.parts));
 const MODEL_H = MODELS.map(g => { g.computeBoundingBox(); return g.boundingBox.max.y; });
 const vmat = toon('#ffffff', { vertexColors:true });
+// cada casa ganha a cor de parede dela (instanceColor) só nos vértices da parede bege; telhado, porta e grama ficam iguais
+const vmatW = toon('#ffffff', { vertexColors:true }); // casinha e sobrado: material próprio (usa instanceColor)
+vmatW.onBeforeCompile = sh => {
+  sh.uniforms.wallC = { value:new THREE.Color(CWALL) };
+  sh.vertexShader = 'uniform vec3 wallC;\n' + sh.vertexShader.replace('#include <color_vertex>', `
+#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
+  vColor = vec3( 1.0 );
+#endif
+#ifdef USE_COLOR
+  vColor *= color;
+#endif
+#ifdef USE_INSTANCING_COLOR
+  { float wk = 1.0 - smoothstep( 0.02, 0.05, distance( color.xyz, wallC ) ); vColor.xyz = mix( vColor.xyz, instanceColor.xyz, wk ); }
+#endif`);
+};
+const WALL_PAL = ['#d6ad78', '#d98a73', '#6fa8d6', '#8cc06d', '#e3bf45', '#a98bd6', '#d9d4c6', '#e8955a', '#62bdae', '#e08aa8'].map(c => new THREE.Color(c));
+const wallOf = h => { let x = 7; for (let i = 0; i < h.length; i++) x = (x * 31 + h.charCodeAt(i)) >>> 0; return WALL_PAL[x % WALL_PAL.length]; };
 
 // Miniaturas para legenda e ranking
 const LEVEL_IMG = [];
@@ -750,7 +767,7 @@ const NC = cities.length;
 const HCAP = [100000, 40000, 25000, 20000, 8000, 6000, 5000, 4000, 3000, 3000, 2500, 2000, 1500, 1200, 1000];
 const FCAP = 120000, RCAP = 60000;
 function IM(geo, mat, cap, shadow = true) { const m = new THREE.InstancedMesh(geo, mat, cap); m.count = 0; m.frustumCulled = false; m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m; }
-const HM = MODELS.map((g, L) => IM(g, vmat, HCAP[L]));
+const HM = MODELS.map((g, L) => { const m = IM(g, L < 2 ? vmatW : vmat, HCAP[L]); if (L < 2) { m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(HCAP[L] * 3).fill(.85), 3); m.instanceColor.setUsage(THREE.DynamicDrawUsage); } return m; });
 const flagIM = IM(new THREE.BoxGeometry(.2, .13, .02), toon('#ffffff'), FCAP, false);
 const plazaIM = IM(plazaGeo, vmat, NC);
 const groundIM = IM(new THREE.BoxGeometry(1, .03, 1), toon('#8fcf5a'), NC, false);
@@ -821,7 +838,7 @@ function writeHouse(c, k, s) {
   p4.x += (f[0] + .1) * LOT * s; p4.y += (f[1] - .07) * LOT * s; p4.z += f[2] * LOT * s;
   m4.compose(p4, q4, s4); flagIM.setMatrixAt(c.fref[k], m4);
 }
-let active = [], HREF = [];
+let active = [], HREF = [], wallUp = 0;
 function rebuildAll() {
   byCity = new Map(); kings = {}; votesCity = new Map(); votesNat = { b:new Map(), r:new Map(), n:new Map() };
   credited.forEach(k => {
@@ -873,7 +890,7 @@ function rebuildAll() {
       const L = inf.lvl - 1;
       if (cnt[L] >= HCAP[L] || fc >= FCAP) { c.ref[k] = null; return; }
       c.ref[k] = [L, cnt[L]++]; c.fref[k] = fc++; HREF[L][c.ref[k][1]] = [c.i, k];
-      flagIM.setColorAt(c.fref[k], SIDE_COL[inf.side]); writeHouse(c, k, 1);
+      flagIM.setColorAt(c.fref[k], SIDE_COL[inf.side]); if (L < 2) HM[L].setColorAt(c.ref[k][1], wallOf(inf.h || (c.i + ':' + k))); writeHouse(c, k, 1);
     });
     const R = radiusOf(c.list.length); c.rad = R;
     const size = (2 * R + 1.6) * CELL;
@@ -893,7 +910,8 @@ function rebuildAll() {
   cnt.forEach((n, L) => HM[L].count = n);
   flagIM.count = fc; plazaIM.count = groundIM.count = poleIM.count = cflagIM.count = ac; roadIM.count = rc;
   [...HM, flagIM, plazaIM, groundIM, roadIM, poleIM, cflagIM].forEach(m => m.instanceMatrix.needsUpdate = true);
-  [flagIM, cflagIM, dotIM].forEach(m => { if (m.instanceColor) m.instanceColor.needsUpdate = true; });
+  [flagIM, cflagIM, dotIM, HM[0], HM[1]].forEach(m => { if (m.instanceColor) m.instanceColor.needsUpdate = true; });
+  wallUp = 3;
   lastDotD = -1;
   updateTrees();
   updateLandmarks(); updateMarcos(); if (typeof updateShops === 'function' && window.__bizReady) updateShops();
@@ -1386,6 +1404,28 @@ function drawHouseLabel() {
   houseLab.style.top = ((1 - v3.y) / 2 * canvas.clientHeight) + 'px';
 }
 let poolCities = [], frameN = 0;
+// ---------- @ em cima das casas quando a câmera está perto (como placas com o nome de cada morador) ----------
+const HTAG_N = 48, htags = [];
+for (let i = 0; i < HTAG_N; i++) { const e = document.createElement('button'); e.className = 'htag'; e.hidden = true; e.onclick = () => { if (e._h) openProfile(e._h); }; labelsEl.appendChild(e); htags.push(e); }
+{ const css = document.createElement('style'); css.textContent = '.htag{position:absolute;transform:translate(-50%,-100%);background:#fff;border:2px solid #1d2433;border-radius:999px;padding:1px 7px 1px 5px;font:800 10.5px/1.3 Nunito,system-ui,sans-serif;color:#1d2433;white-space:nowrap;box-shadow:0 2px 0 #1d2433;pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:3px}.htag i{width:7px;height:7px;border-radius:50%;display:inline-block}.htag.f{background:#ffd23f}.htag[hidden]{display:none}'; document.head.appendChild(css); }
+let htagF = 0;
+function drawHouseTags(d) {
+  if (d > 6.2 || (picked && d > 3)) { if (htagF) { htags.forEach(e => e.hidden = true); htagF = 0; } return; }
+  const W = canvas.clientWidth, H = canvas.clientHeight, cand = [], tg = controls.target;
+  for (const ci of active) { const c = cities[ci]; if (Math.abs(c.x - tg.x) > d * 1.4 || Math.abs(c.z - tg.z) > d * 1.4) continue;
+    c.list.forEach((inf, k) => { if (!inf.h || !c.ref[k] || (picked && picked.h === inf.h)) return; const [i, j] = SLOTS[k], L = c.ref[k][0];
+      v3.set(c.x + i * CELL, GY + (MODEL_H[L] + .2) * LOT, c.z + j * CELL); const dd = v3.distanceTo(camera.position); v3.project(camera);
+      if (v3.z > 1 || Math.abs(v3.x) > 1.05 || Math.abs(v3.y) > 1.05) return; cand.push([dd, (v3.x + 1) / 2 * W, (1 - v3.y) / 2 * H, inf, c]); }); }
+  cand.sort((a, b) => a[0] - b[0]);
+  const placed = []; let n = 0;
+  for (const [, x, y, inf, c] of cand) { if (n >= HTAG_N) break;
+    const w = 14 + Math.min(18, inf.h.length) * 6.2; if (placed.some(r => Math.abs(r[0] - x) < (r[2] + w) / 2 + 2 && Math.abs(r[1] - y) < 18)) continue;
+    placed.push([x, y, w]); const e = htags[n++], key = inf.h + inf.side + (c.f === inf.h ? 'f' : '');
+    if (e._k !== key) { e._k = key; e._h = inf.h; e.className = 'htag' + (c.f === inf.h ? ' f' : ''); e.innerHTML = `<i style="background:${'#' + SIDE_COL[inf.side].getHexString()}"></i>${html(showH(inf.h))}`; e.setAttribute('aria-label', 'Casa de ' + showH(inf.h)); }
+    e.hidden = false; e.style.left = x + 'px'; e.style.top = y + 'px'; }
+  for (let i = n; i < HTAG_N; i++) htags[i].hidden = true;
+  htagF = n;
+}
 
 // ---------- Câmera ----------
 function frameCamera() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
@@ -1576,9 +1616,60 @@ function updateTraffic(t, d) {
   carIM.instanceColor.needsUpdate = lheadIM.instanceColor.needsUpdate = true;
 }
 const UPV = new THREE.Vector3(0, 1, 0);
+// ---------- Globo 3D de abertura: a Terra gira e aproxima até o Brasil, depois entra no mapa ----------
+const GLOBE = (() => {
+  const gs = new THREE.Scene(), gc = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, .01, 50);
+  { const cv = document.createElement('canvas'); cv.width = 2; cv.height = 256; const g = cv.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 256);
+    gr.addColorStop(0, '#9fc3e0'); gr.addColorStop(.6, '#cfe0ec'); gr.addColorStop(1, '#e8f0f5'); g.fillStyle = gr; g.fillRect(0, 0, 2, 256); gs.background = new THREE.CanvasTexture(cv); }
+  gs.add(new THREE.HemisphereLight(0xffffff, 0x8aa0b4, .75)); const gl = new THREE.DirectionalLight(0xffffff, .65); gl.position.set(-3, 2, 4); gs.add(gl);
+  const tex = new THREE.TextureLoader().load('globo.jpg'); tex.anisotropy = 4;
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(1, 96, 64), new THREE.MeshLambertMaterial({ map:tex, color:'#ffffff' }));
+  const atm = new THREE.Mesh(new THREE.SphereGeometry(1.06, 64, 32), new THREE.MeshBasicMaterial({ color:'#cfe8ff', transparent:true, opacity:.28, side:THREE.BackSide }));
+  const halo = new THREE.Mesh(new THREE.SphereGeometry(1.025, 64, 32), new THREE.MeshBasicMaterial({ color:'#ffffff', transparent:true, opacity:.12 }));
+  const grp = new THREE.Group(); grp.add(earth, halo); gs.add(grp, atm);
+  // nuvens soltas em volta
+  const cm = new THREE.MeshLambertMaterial({ color:'#ffffff', transparent:true, opacity:.8 }), cl = [];
+  for (let i = 0; i < 26; i++) { const m = new THREE.Mesh(new THREE.IcosahedronGeometry(.035 + (i % 4) * .012, 1), cm); m.scale.y = .45; const a = i * 2.39, b = Math.sin(i * 1.7) * 1.1; m.position.set(Math.cos(a) * Math.cos(b) * 1.05, Math.sin(b) * 1.05, Math.sin(a) * Math.cos(b) * 1.05); grp.add(m); cl.push(m); }
+  // direção do Brasil na esfera (mesma convenção de UV da SphereGeometry)
+  const dirOf = (lon, lat) => { const ph = (lon + 180) / 360 * Math.PI * 2, th = (90 - lat) / 180 * Math.PI; return new THREE.Vector3(-Math.cos(ph) * Math.sin(th), Math.cos(th), Math.sin(ph) * Math.sin(th)); };
+  const BR = dirOf(-50, -14);
+  const yaw0 = Math.atan2(BR.x, BR.z); // girar o grupo para o Brasil olhar para +z
+  const fx = document.createElement('div'); fx.style.cssText = 'position:fixed;inset:0;background:#c4d6e3;opacity:0;pointer-events:none;z-index:4;transition:none';
+  document.body.appendChild(fx);
+  const st = { on:false, t0:0, dur:3600, p:0, spin:0 };
+  const ease = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  // p: 0 = globo inteiro longe, 1 = colado no Brasil; spin: voltas extras antes de parar no Brasil
+  function pose(p, spin = 0) {
+    grp.rotation.set(0, -yaw0 + spin, 0);
+    grp.rotation.x = BR.y * .9 * ease(Math.min(1, p * 1.4)); // inclina para o Brasil ficar no centro
+    gc.aspect = innerWidth / innerHeight; gc.fov = 34; gc.updateProjectionMatrix();
+    const hf = Math.atan(Math.tan(17 * Math.PI / 180) * Math.min(1, gc.aspect)), d0 = 1.22 / Math.sin(hf), d1 = 1 + .5 / Math.tan(hf);
+    const d = d0 + (d1 - d0) * ease(p);
+    gc.position.set(0, 0, d); gc.lookAt(0, 0, 0);
+    atm.material.opacity = .28 * (1 - p * .7);
+    cl.forEach((m, i) => m.rotation.y += .002);
+  }
+  function render() { renderer.render(gs, gc); }
+  function frame(now) {
+    const k = Math.min(1, (now - st.t0) / st.dur);
+    const spin = (1 - ease(Math.min(1, k * 1.15))) * -2.2;
+    pose(Math.max(0, (k - .25) / .75), spin); render();
+    fx.style.opacity = k > .86 ? Math.min(1, (k - .86) / .1) : 0;
+    if (k >= 1) end();
+  }
+  function end() { if (!st.on) return; st.on = false; document.body.classList.remove('globeOn'); fx.style.transition = 'opacity .45s'; fx.style.opacity = 0; document.removeEventListener('pointerdown', skip, true); }
+  const skip = () => { st.dur = Math.min(st.dur, performance.now() - st.t0 + 450); };
+  function start() { st.on = true; document.body.classList.add('globeOn'); st.t0 = performance.now(); fx.style.transition = 'none'; document.addEventListener('pointerdown', skip, true); }
+  return { st, start, frame, end, pose, render, fx, scene:gs, camera:gc, get on() { return st.on; } };
+})();
+{ const css = document.createElement('style'); css.textContent = 'body.globeOn #labels,body.globeOn #pres,body.globeOn #zoom,body.globeOn #hlBar,body.globeOn #presCard{visibility:hidden}'; document.head.appendChild(css); }
+let globeShown = false;
+try { globeShown = sessionStorage.getItem('vsp_globo') === '1'; sessionStorage.setItem('vsp_globo', '1'); } catch (e) {}
+if (!globeShown && !window.__STATE && !RM) GLOBE.start();
 function loop(t) {
   if (perfN < 3) ph('E-frame' + perfN + ' ' + (LOWQ ? 'low' : 'hi') + ' ' + GLNAME.slice(0, 40));
   if (perfN === 0) { perfT0 = performance.now(); const ld = document.getElementById('loading'); if (ld) ld.remove(); }
+  if (GLOBE.on) { GLOBE.frame(performance.now()); requestAnimationFrame(loop); return; }
   if (++perfN === 25 && (performance.now() - perfT0) / 24 > 70) goLow();
   if (focus) {
     const off = camera.position.clone().sub(controls.target), d0 = off.length();
@@ -1606,9 +1697,10 @@ function loop(t) {
     dirty = true;
   }
   if (dirty) { HM.forEach(m => m.instanceMatrix.needsUpdate = true); flagIM.instanceMatrix.needsUpdate = true; }
+  if (wallUp > 0) { wallUp--; HM[0].instanceColor.needsUpdate = HM[1].instanceColor.needsUpdate = true; }
   if (!RM) clouds.forEach((g, i) => { g.position.x += .01 + i * .0015; if (g.position.x > minX + span + 15) g.position.x = minX - 15; });
   updateTraffic(t, d);
-  drawLabels(d); drawHouseLabel(); drawFanLabels(d); drawStateTags(); drawBizTags(d); drawMissions(d); updatePulses(t, d);
+  drawLabels(d); drawHouseLabel(); drawHouseTags(d); drawFanLabels(d); drawStateTags(); drawBizTags(d); drawMissions(d); updatePulses(t, d);
   scene.fog.near = d * 1.15; scene.fog.far = d * 3.4;
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
