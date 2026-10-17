@@ -2908,22 +2908,22 @@ function fireworks(ms = 6500) {
   // fogos de felicidade: foguetes com rastro que sobem e explodem em anéis, chuva de brilho e confete
   const cv = document.createElement('canvas'); cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:20';
   document.getElementById('app').appendChild(cv); const dpr = Math.min(2, devicePixelRatio || 1), W = innerWidth, H = innerHeight; cv.width = W * dpr; cv.height = H * dpr;
-  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const g = cv.getContext('2d'); g.scale(dpr, dpr); const K = Math.max(1, Math.min(2.8, Math.min(W, H) / 400)); // maior em telas grandes
   const P = [], R = [], CF = [], cols = ['#ffc93c', '#2f6fec', '#e5484d', '#3ad17a', '#ffffff', '#ff8a1f', '#d6249f', '#7fe3ff'], t0 = performance.now(); let last = 0, lastT = t0;
   const rnd = (a, b) => a + Math.random() * (b - a), pick = () => cols[Math.floor(Math.random() * cols.length)];
   const rocket = () => R.push({ x:W * rnd(.12, .88), y:H + 10, vx:rnd(-1.2, 1.2), vy:-rnd(H * .012 + 7, H * .014 + 9), ty:H * rnd(.12, .45), c:pick() });
   const boom = (x, y, c) => { const c2 = Math.random() < .5 ? pick() : c, n = 110 + Math.floor(Math.random() * 60), ring = Math.random() < .35;
-    for (let i = 0; i < n; i++) { const a = Math.random() * 6.283, v = ring ? 5 : rnd(1.2, 6); P.push({ x, y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, l:1, d:rnd(.008, .016), c:i % 3 ? c : c2, s:rnd(2.2, 3.8), tw:Math.random() < .3 }); }
-    for (let i = 0; i < 26; i++) P.push({ x, y, vx:rnd(-1.5, 1.5), vy:rnd(-1, 2), l:1.3, d:.006, c:'#fff6c8', s:1.6, tw:true }); };
-  for (let i = 0; i < 70; i++) CF.push({ x:rnd(0, W), y:rnd(-H, 0), vy:rnd(1.5, 3.5), vx:rnd(-.6, .6), r:rnd(0, 6.28), vr:rnd(-.2, .2), w:rnd(6, 11), h:rnd(9, 16), c:pick() });
+    for (let i = 0; i < n; i++) { const a = Math.random() * 6.283, v = (ring ? 5 : rnd(1.2, 6)) * K; P.push({ x, y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, l:1, d:rnd(.008, .016), c:i % 3 ? c : c2, s:rnd(2.2, 3.8) * K, tw:Math.random() < .3 }); }
+    for (let i = 0; i < 26; i++) P.push({ x, y, vx:rnd(-1.5, 1.5) * K, vy:rnd(-1, 2) * K, l:1.3, d:.006, c:'#fff6c8', s:1.6 * K, tw:true }); };
+  for (let i = 0; i < 70; i++) CF.push({ x:rnd(0, W), y:rnd(-H, 0), vy:rnd(1.5, 3.5) * K, vx:rnd(-.6, .6) * K, r:rnd(0, 6.28), vr:rnd(-.2, .2), w:rnd(6, 11) * K, h:rnd(9, 16) * K, c:pick() });
   const step = now => { const el = now - t0, f = Math.min(3, (now - lastT) / 16.7); lastT = now;
     if (el < ms - 1500 && now - last > 260) { rocket(); if (Math.random() < .5) rocket(); last = now; }
     g.clearRect(0, 0, W, H);
-    for (let i = R.length - 1; i >= 0; i--) { const r = R[i]; r.x += r.vx * f; r.y += r.vy * f; r.vy += .12 * f;
-      g.globalAlpha = 1; g.fillStyle = r.c; g.beginPath(); g.arc(r.x, r.y, 3, 0, 6.283); g.fill();
-      for (let k = 1; k < 6; k++) { g.globalAlpha = .5 - k * .08; g.beginPath(); g.arc(r.x - r.vx * k * 1.5, r.y - r.vy * k * 1.5, 2.4 - k * .3, 0, 6.283); g.fill(); }
+    for (let i = R.length - 1; i >= 0; i--) { const r = R[i]; r.x += r.vx * f; r.y += r.vy * f; r.vy += .12 * f * (H / 800);
+      g.globalAlpha = 1; g.fillStyle = r.c; g.beginPath(); g.arc(r.x, r.y, 3 * K, 0, 6.283); g.fill();
+      for (let k = 1; k < 6; k++) { g.globalAlpha = .5 - k * .08; g.beginPath(); g.arc(r.x - r.vx * k * 1.5, r.y - r.vy * k * 1.5, (2.4 - k * .3) * K, 0, 6.283); g.fill(); }
       if (r.y <= r.ty || r.vy >= -1) { boom(r.x, r.y, r.c); R.splice(i, 1); } }
-    for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; p.x += p.vx * f; p.y += p.vy * f; p.vy += .06 * f; p.vx *= Math.pow(.975, f); p.vy *= Math.pow(.985, f); p.l -= p.d * f;
+    for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; p.x += p.vx * f; p.y += p.vy * f; p.vy += .06 * K * f; p.vx *= Math.pow(.975, f); p.vy *= Math.pow(.985, f); p.l -= p.d * f;
       if (p.l <= 0) { P.splice(i, 1); continue; } g.globalAlpha = Math.max(0, p.tw ? p.l * (.5 + .5 * Math.sin(now * .05 + i)) : p.l); g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, p.s * (.6 + .4 * p.l), 0, 6.283); g.fill(); }
     if (el < ms) for (const c of CF) { c.y += c.vy * f; c.x += c.vx * f + Math.sin(now * .002 + c.r) * .4; c.r += c.vr * f; if (c.y > H + 20) { c.y = -20; c.x = rnd(0, W); }
       g.save(); g.globalAlpha = Math.min(1, (ms - el) / 800); g.translate(c.x, c.y); g.rotate(c.r); g.fillStyle = c.c; g.fillRect(-c.w / 2, -c.h / 2 * Math.abs(Math.cos(c.r * 2)), c.w, c.h * Math.abs(Math.cos(c.r * 2)) + 1); g.restore(); }
