@@ -359,8 +359,8 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 ph('B-renderer');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#bfe3f5');
-scene.fog = new THREE.Fog('#bfe3f5', 400, 3000); // névoa leve: dá profundidade ao mapa inclinado
+scene.background = new THREE.Color('#c4d6e3');
+scene.fog = new THREE.Fog('#c4d6e3', 400, 3000); // névoa leve: dá profundidade ao mapa inclinado
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 2500);
 const controls = new THREE.OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
@@ -385,19 +385,17 @@ const toon = (c, o = {}) => new THREE.MeshToonMaterial(Object.assign({ color:c, 
 
 // Oceano: azul com ondinhas claras (textura repetida)
 function waveTex() {
+  // oceano de mapa-múndi: azul acinzentado claro com quadriculado bem leve
   const cv = document.createElement('canvas'); cv.width = cv.height = 256;
   const g = cv.getContext('2d');
-  g.fillStyle = '#6cb7e4'; g.fillRect(0, 0, 256, 256);
-  g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 3; g.lineCap = 'round';
-  for (let k = 0; k < 14; k++) {
-    const x = hash(k, 5) * 256, y = hash(k, 9) * 256, w = 18 + hash(k, 2) * 22;
-    g.beginPath(); g.moveTo(x - w / 2, y); g.quadraticCurveTo(x - w / 4, y - 6, x, y); g.quadraticCurveTo(x + w / 4, y + 6, x + w / 2, y); g.stroke();
-  }
-  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(180, 180);
+  g.fillStyle = '#a9c3d5'; g.fillRect(0, 0, 256, 256);
+  for (let k = 0; k < 900; k++) { g.fillStyle = `rgba(255,255,255,${.03 + hash(k, 3) * .05})`; g.fillRect(hash(k, 5) * 256, hash(k, 9) * 256, 2, 2); }
+  g.strokeStyle = 'rgba(255,255,255,.1)'; g.lineWidth = 2; g.strokeRect(1, 1, 254, 254);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(120, 120);
   t.anisotropy = 4; return t;
 }
 const seaTex = waveTex();
-const sea = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ map:seaTex }));
+const sea = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshLambertMaterial({ map:seaTex, color:'#bccad4' }));
 sea.rotation.x = -Math.PI / 2; sea.position.y = -0.3; sea.receiveShadow = true; scene.add(sea);
 
 // ---------- Terreno com biomas e divisas ----------
@@ -425,15 +423,15 @@ function biome(lon, lat) {
   return 'cerrado';
 }
 const BIO = {
-  amazon:['#2f7d5a','#38875f','#2a7255','#43936a','#2c6f5a'],
-  cerrado:['#b5a65a','#a99c52','#c1b36b','#9e914a','#b8ab62'],
-  caatinga:['#aaa49a','#9d978d','#b6b0a5','#a39d90'],
-  mata:['#5c9c45','#67a64e','#54913c','#6fae55'],
-  pantanal:['#7db48a','#8bc19c','#73a984'],
-  pampa:['#9cc76a','#a9d178','#93bf62']
+  amazon:['#2b622b','#336d30','#285a28','#3b7533','#2f672d','#22552a'],
+  cerrado:['#a29856','#958c4b','#ada261','#8b8a49','#9a9658','#b3a86c'],
+  caatinga:['#b0a689','#a49b80','#bab195','#9c9783','#aaa38c'],
+  mata:['#4a8338','#558f41','#417733','#5e984a','#4c8a3d'],
+  pantanal:['#8bb595','#99c1a2','#7fa98b'],
+  pampa:['#8aae5a','#97ba66','#7fa352']
 };
 function makeTerrain() {
-  const TW = LOWQ ? 1024 : 2048, C = LOWQ ? 4 : 8, cv = document.createElement('canvas'); cv.width = cv.height = TW;
+  const TW = LOWQ ? 1024 : 2048, C = LOWQ ? 3 : 4, cv = document.createElement('canvas'); cv.width = cv.height = TW;
   const ctx = cv.getContext('2d');
   const toPx = (lon, lat) => [((lon + OX) * S - minX) / span * TW, TW - ((lat + OZ) * S - minY) / span * TW];
   const toLL = (px, py) => [(minX + px / TW * span) / S - OX, (minY + (TW - py) / TW * span) / S - OZ];
@@ -444,15 +442,15 @@ function makeTerrain() {
   const BIOC = {}; for (const k in BIO) BIOC[k] = BIO[k].map(hex);
   for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) {
     const px = gx * C, py = gy * C, [lon, lat] = toLL(px + C / 2, py + C / 2), pal = BIOC[biome(lon, lat)];
-    const v = vnoise(px * .025, py * .025) * .6 + hash(px, py) * .4, c = pal[Math.floor(v * pal.length) % pal.length], o = (gy * G + gx) * 4;
+    const v = Math.min(.999, vnoise(px * .012, py * .012) * .45 + vnoise(px * .05, py * .05) * .3 + hash(px, py) * .25), c = pal[Math.floor(v * pal.length) % pal.length], o = (gy * G + gx) * 4;
     img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
   }
   const small = document.createElement('canvas'); small.width = small.height = G; small.getContext('2d').putImageData(img, 0, 0);
   ctx.save(); ring(BR); ctx.clip();
   ctx.imageSmoothingEnabled = true; ctx.drawImage(small, 0, 0, TW, TW);
   // copas de árvores desenhadas na textura: floresta densa vista de cima (como maquete)
-  { const NT = LOWQ ? 26000 : 70000, TR = TW / 2048;
-    const CAN = { amazon:[.95, ['#1f6b45', '#2a7d50', '#24734a', '#2f8a58'], 4.2], mata:[.75, ['#3f8f3a', '#4a9c40', '#367f33'], 3.6], pantanal:[.25, ['#5e9f6e'], 3], cerrado:[.16, ['#7a8a3c', '#6c7d34'], 2.6], pampa:[.08, ['#6aa04a'], 2.6], caatinga:[.1, ['#8a8a6a', '#7b7b5c'], 2.4] };
+  { const NT = LOWQ ? 60000 : 160000, TR = TW / 2048;
+    const CAN = { amazon:[.98, ['#1d4f22', '#24592a', '#2c6a2f', '#1a4a20'], 2.6], mata:[.7, ['#2f6a2c', '#3a7834', '#285e27'], 2.4], pantanal:[.3, ['#4f8a5c'], 2], cerrado:[.38, ['#556b2c', '#4a6428', '#62762f'], 1.9], pampa:[.15, ['#5b8a3c'], 1.8], caatinga:[.22, ['#6e7158', '#7a7a5c', '#5f6650'], 1.7] };
     for (let i = 0; i < NT; i++) {
       const px = hash(i, 91) * TW, py = hash(i, 97) * TW, [lon, lat] = toLL(px, py), cfg = CAN[biome(lon, lat)];
       if (!cfg || hash(i, 101) > cfg[0]) continue;
@@ -467,24 +465,37 @@ function makeTerrain() {
       ctx.fillStyle = '#9fd6ef'; ctx.beginPath(); ctx.ellipse(px, py, 7, 4, 0, 0, 7); ctx.fill();
     }
   }
+  // rios principais (lon, lat) + afluentes gerados: linhas finas e sinuosas, como em mapa físico
   const RIV = [
     [[-70,-4.2],[-67,-3.2],[-64,-3.6],[-60,-3.2],[-57,-2.6],[-54.5,-2.2],[-52,-1.6],[-50.4,-0.7]],
     [[-67,1],[-64,-0.5],[-61.5,-2.4],[-60,-3.1]], [[-65.3,-10.5],[-63.9,-8.7],[-61.5,-5.8],[-59,-3.6]],
     [[-57.5,-9],[-56.5,-5.5],[-55,-2.5]], [[-53.5,-11.5],[-52.8,-7],[-52.2,-2]],
-    [[-48.8,-15.5],[-48.6,-10],[-48.4,-5.5],[-49.2,-1.8]],
+    [[-48.8,-15.5],[-48.6,-10],[-48.4,-5.5],[-49.2,-1.8]], [[-52.5,-15.8],[-50.5,-12],[-49.3,-6.5]],
     [[-46,-20],[-44.8,-17],[-43.5,-13.5],[-41.5,-9.5],[-38.5,-9.3],[-36.4,-10.5]],
-    [[-50.5,-19.6],[-52,-22],[-54,-24.2],[-54.6,-25.6]]
+    [[-50.5,-19.6],[-52,-22],[-54,-24.2],[-54.6,-25.6]], [[-57.6,-16],[-57.8,-19.5],[-58,-22]],
+    [[-72,-7.5],[-69,-6.5],[-66.5,-5],[-64,-4]], [[-70,-8.5],[-67.5,-7.5],[-64.5,-5.5],[-62.5,-4]],
+    [[-69.5,-1.2],[-66.5,-2.2],[-64.5,-2.8]], [[-45.5,-9.2],[-43.5,-6],[-42.4,-3]],
+    [[-53.8,-26.7],[-55.5,-28],[-57.5,-30]], [[-47.5,-22.3],[-49.8,-21.2],[-51.2,-20.4]], [[-45,-21.5],[-48,-20.1],[-50.5,-20]],
+    [[-56,-13],[-55.6,-9.5],[-55.3,-6.5]], [[-61,-12.5],[-60.5,-8.5],[-59.8,-5.5]]
   ];
   ctx.lineCap = ctx.lineJoin = 'round';
-  RIV.forEach((rv, ri) => {
-    [[14, '#f2f6f8'], [8, '#7fc8ee']].forEach(([w, col]) => {
-      ctx.strokeStyle = col; ctx.lineWidth = ri === 0 ? w + 4 : w; ctx.beginPath();
-      rv.forEach(([lon, lat], i) => { const [x, y] = toPx(lon, lat); if (!i) ctx.moveTo(x, y); else { const [px, py] = toPx(rv[i - 1][0], rv[i - 1][1]); ctx.quadraticCurveTo(px + (y - py) * .15, py - (x - px) * .15, x, y); } });
-      ctx.stroke();
-    });
-  });
+  const wig = (rv, seed) => { const out = []; for (let i = 0; i < rv.length - 1; i++) { const [a1, b1] = rv[i], [a2, b2] = rv[i + 1];
+      for (let k = 0; k < 8; k++) { const f = k / 8, nx = (vnoise(seed + i * 3 + f * 2, seed) - .5) * .9; out.push([a1 + (a2 - a1) * f - (b2 - b1) * nx * .25, b1 + (b2 - b1) * f + (a2 - a1) * nx * .25]); } }
+    out.push(rv[rv.length - 1]); return out; };
+  const drawRiver = (rv, w) => { [[w + 3, 'rgba(240,246,248,.9)'], [w, '#86c3e6']].forEach(([lw, col]) => { ctx.strokeStyle = col; ctx.lineWidth = lw * TW / 2048; ctx.beginPath();
+      rv.forEach(([lon, lat], i) => { const [x, y] = toPx(lon, lat); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); }); };
+  RIV.forEach((rv, ri) => { const W = wig(rv, ri * 7.3);
+    // afluentes: galhos curtos saindo do rio principal
+    for (let k = 2; k < W.length - 2; k += 5) { const [lon, lat] = W[k], sd = ri * 31 + k, ang = hash(sd, 3) * 6.283, len = .8 + hash(sd, 5) * 1.8, br = [[lon, lat]];
+      for (let j = 1; j <= 5; j++) br.push([lon + Math.cos(ang + (hash(sd, j) - .5) * .8) * len * j / 5, lat + Math.sin(ang + (hash(sd, j + 9) - .5) * .8) * len * j / 5]);
+      drawRiver(br, 1.6); }
+    drawRiver(W, ri === 0 ? 5.5 : 3.4); });
+  // povoados: pontinhos claros onde existem municípios (densidade urbana do mapa real)
+  for (const c of cities) { const [x, y] = toPx(c.lon, c.lat), n = c.cap ? 26 : 3, R = (c.cap ? 9 : 3) * TW / 2048;
+    for (let k = 0; k < n; k++) { const a = hash(c.i, k) * 6.283, rr = Math.sqrt(hash(c.i, k + 40)) * R; ctx.fillStyle = k % 2 ? 'rgba(215,212,200,.85)' : 'rgba(170,168,160,.8)';
+      ctx.fillRect(x + Math.cos(a) * rr, y + Math.sin(a) * rr, 1.6 * TW / 2048, 1.6 * TW / 2048); } }
   // divisas dos estados
-  ctx.globalAlpha = .9; ctx.strokeStyle = '#f6efd8'; ctx.lineWidth = 4;
+  ctx.globalAlpha = .28; ctx.strokeStyle = '#f6efd8'; ctx.lineWidth = 2;
   GEO.st.forEach(r => { ring(r); ctx.stroke(); });
   ctx.globalAlpha = 1;
   ctx.restore();
@@ -499,7 +510,7 @@ const shape = new THREE.Shape();
 BR.forEach(([lon, lat], i) => { const x = (lon + OX) * S, y = (lat + OZ) * S; i ? shape.lineTo(x, y) : shape.moveTo(x, y); });
 const land = new THREE.Mesh(
   new THREE.ExtrudeGeometry(shape, { depth:1.0, bevelEnabled:true, bevelThickness:.25, bevelSize:.4, bevelSegments:1, curveSegments:1 }),
-  [new THREE.MeshLambertMaterial({ map:makeTerrain() }), toon('#d6c38c')]
+  [new THREE.MeshLambertMaterial({ map:makeTerrain(), color:'#c9c9c4' }), toon('#cdbb88')]
 );
 land.rotation.x = -Math.PI / 2; land.receiveShadow = true; scene.add(land);
 
@@ -518,8 +529,8 @@ function ribbonGeo(w, y) {
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); return g;
 }
-const borderHalo = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color:'#3d3424', transparent:true, opacity:.35, depthWrite:false }));
-const borderLine = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color:'#ffffff', transparent:true, opacity:.92, depthWrite:false }));
+const borderHalo = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color:'#3d3424', transparent:true, opacity:.12, depthWrite:false }));
+const borderLine = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color:'#ffffff', transparent:true, opacity:.38, depthWrite:false }));
 borderHalo.renderOrder = 1; borderLine.renderOrder = 2;
 scene.add(borderHalo, borderLine);
 const coastI0 = BR.findIndex(([x, y]) => Math.abs(x + 51.66) < .02 && Math.abs(y - 4.16) < .02);
@@ -544,7 +555,7 @@ const foam = new THREE.Mesh(lineRibbon(COAST_LINE, 1.1, -.275), waterMat('#fffff
 
 let lastBW = 0;
 function updateBorders(d) {
-  const w = Math.min(1.3, Math.max(.05, d * .0045));
+  const w = Math.min(.8, Math.max(.04, d * .0026)); // divisas discretas, como mapa físico
   if (lastBW && Math.abs(w - lastBW) / lastBW < .2) return;
   lastBW = w;
   borderHalo.geometry.dispose(); borderLine.geometry.dispose();
@@ -1349,9 +1360,9 @@ let poolCities = [], frameN = 0;
 // ---------- Câmera ----------
 function frameCamera() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', frameCamera); frameCamera();
-const fitDist = () => span * (camera.aspect < .8 ? 2.55 : 1.25);
+const fitDist = () => span * (camera.aspect < .8 ? 2.9 : 1.3);
 controls.maxDistance = span * 3.3;
-const TILT = .62; // mapa inclinado, como maquete 3D
+const TILT = .7; // mapa inclinado, como maquete 3D
 camera.position.copy(CENTER).add(new THREE.Vector3(0, Math.cos(TILT), Math.sin(TILT)).multiplyScalar(fitDist()));
 controls.target.copy(CENTER);
 let focus = null;
