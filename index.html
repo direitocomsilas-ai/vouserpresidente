@@ -2856,6 +2856,8 @@ cCss.textContent = `.ac-hd{display:flex;align-items:center;gap:10px;border:2px s
 .ac-hd b{font-family:var(--display);font-weight:400;font-size:20px;display:block;line-height:1.1}.ac-hd small{font-weight:800;color:var(--muted);font-size:12.5px}
 .ac-r{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-weight:800;font-size:14px}.ac-r .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.ac-r small{display:block;color:var(--muted);font-weight:700;white-space:normal}
 .ac-r .chip{font-size:13px;padding:3px 10px;box-shadow:0 2px 0 var(--ink)}.ptag{display:inline-block;border:2px solid var(--ink);border-radius:8px;padding:0 6px;font:900 11px var(--body);vertical-align:2px}
+.ac-lv{display:flex;gap:10px;align-items:center;margin-top:10px}.ac-lv img{width:64px;height:64px;flex:none;background:var(--sky);border:3px solid var(--ink);border-radius:14px}.ac-lv>span{flex:1;min-width:0;display:grid;gap:3px}.ac-lv b{font-family:var(--display);font-weight:400;font-size:19px}.ac-lv small{font-weight:800;color:var(--muted);font-size:12px}
+.ac-acts{grid-template-columns:1fr 1fr}.ac-acts .act{font-size:13.5px;padding:8px 10px;flex-direction:column;align-items:flex-start;gap:2px}.ac-acts .act small{font-size:12.5px}
 .ac-cores{display:flex;gap:6px;flex-wrap:wrap}.ac-cores button{width:30px;height:30px;border-radius:50%;border:2px solid var(--ink);cursor:pointer}.ac-cores button.on{outline:3px solid var(--ink);outline-offset:2px}
 #cConta{position:absolute;z-index:6;top:max(12px,env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));height:46px;display:inline-flex;align-items:center;gap:6px;border:3px solid var(--ink);border-radius:99px;background:var(--paper);padding:0 16px 0 10px;font-family:var(--display);font-size:17px;cursor:pointer;box-shadow:0 4px 0 var(--ink);white-space:nowrap}
 #cConta:hover{background:var(--sun)}#cConta:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}#cConta .ai{font-size:20px;line-height:1}
@@ -2873,7 +2875,7 @@ function openAcctLogin(msg) {
     <p class="note">Ainda não tem casa? Comente sua <b>cidade + estado</b> no post do <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a>.</p>`);
   const go = () => { const h = cleanE($('acH').value); if (!h) return accMsg($('acMsg'), 0, 'Coloque seu @.');
     if (!players[h]) return accMsg($('acMsg'), 0, `@${h} ainda não tem casa no mapa. Comente sua cidade + estado no post e volte aqui!`);
-    ME = h; try { localStorage.setItem('vsp_me', h); } catch (e) {} openConta_(); };
+    ME = h; try { localStorage.setItem('vsp_me', h); } catch (e) {} contaBadge(); toast('👋 Bem-vindo(a), @' + h + '!'); openConta_(); };
   $('acGo').onclick = go; $('acH').onkeydown = e => { if (e.key === 'Enter') go(); }; setTimeout(() => $('acH').focus(), 50);
 }
 async function openConta_() {
@@ -2902,9 +2904,27 @@ async function openConta_() {
       <p class="note">Use nome e sigla inventados: siglas de partidos reais não são aceitas.</p>`
     : `<p>🔒 Para <b>fundar seu partido</b>, consiga <b>1 apoio aceito</b>: peça apoio a um amigo acima e espere ele aceitar.</p>`;
   const lista = PARTIDOS.map(P => `<div class="ac-r"><span class="nm">${ptag(P)} <b>${html(P.nome)}</b><small>fundado por @${html(P.fundador)} · ${nMemb(P.id)} filiado(s)</small></span>${fundei ? '' : meuP && meuP.id === P.id ? `<button class="chip" data-sair="1">sair</button>` : `<button class="chip y" data-fil="${P.id}">filiar</button>`}</div>`).join('');
+  const painel = () => {
+    const lv = levelOf(p), sc = scoreOf(p), L = LEVELS[lv - 1], N = LEVELS[lv], prog = N ? Math.round((sc - L.min) / (N.min - L.min) * 100) : 100, rk = rankOf(ME);
+    const roles = (() => { try { return rolesOf(ME); } catch (e) { return []; } })(), fund = cities.filter(x => x.f === ME), k = elecClock();
+    const eLbl = k.fase === 'candidaturas' ? ['📝 Candidatar-me', 'sábado até 19h'] : k.fase === 'votacao' ? ['🗳️ Votar agora', 'até domingo 21h'] : ['🗳️ Eleição', 'resultado e próxima'];
+    return `<div class="ac-st">
+      <div class="ac-lv">${lvImg(lv)}<span><b>Nv ${lv} · ${html(L.name)}</b><small>${N ? `faltam ${N.min - sc} pts para Nv ${N.n}` : 'nível máximo!'}</small><span class="meter" style="height:10px;border:2px solid var(--ink)"><i style="width:${prog}%;background:var(--sun)"></i></span></span></div>
+      <div class="tiles" style="margin-top:8px"><div class="tile"><b>${fmt(sc)}</b><span>pontos totais</span></div><div class="tile"><b>${fmt(wkOf(p))}</b><span>pontos da semana</span></div><div class="tile"><b>${rk ? '#' + rk[0] : '–'}</b><span>${rk ? 'no ranking de ' + fmt(rk[1]) : 'ranking'}</span></div><div class="tile"><b>${TOT(c)}</b><span>moradores em ${html(c.name)}</span></div></div>
+      <div class="phs" style="margin-top:8px">${fund.length ? fund.map(x => `<span class="badge n">🚩 fundador(a) de ${html(x.name)}</span>`).join('') : ''}${roles.map(r => `<span class="badge n" style="background:#fff4cf">${html(r)}</span>`).join('')}${!fund.length && !roles.length ? '<span class="note" style="margin:0">Sem cargo nesta semana: candidate-se no sábado!</span>' : ''}</div></div>
+      <div class="acts ac-acts" style="margin-top:10px">
+        <button class="act" id="aEl"><span>${eLbl[0]}</span><small>${eLbl[1]}</small></button>
+        <button class="act" id="aCasa" style="background:#fff"><span>📍 Ver minha casa</span><small>${html(c.name)}</small></button>
+        <button class="act" id="aPerf" style="background:#fff"><span>👤 Meu perfil completo</span><small>nível e cargos</small></button>
+        <button class="act" id="aFol" style="background:#fff"><span>⭐ Segui / postei story</span><small>+15 · +30</small></button>
+        <button class="act" id="aAli" style="background:#fff"><span>🤝 Convidar aliado</span><small>+3 por amigo</small></button>
+        <button class="act" id="aRank" style="background:#fff"><span>🏆 Ranking</span><small>${rk ? '#' + rk[0] : ''}</small></button>
+      </div>
+      <div class="mrow" style="margin-top:8px"><button class="chip" id="acOut">sair da conta</button><span class="note" style="margin:0">Você fica conectado neste aparelho.</span></div>`;
+  };
   $('mcard').innerHTML = `<button class="mx" id="mx" aria-label="Fechar">✕</button><h2>👤 Minha conta</h2>
     <div class="ac-hd"><span class="av" style="background:${p.side === 'b' ? 'var(--blue)' : p.side === 'r' ? 'var(--red)' : '#c9ced8'}">🏠</span><span style="flex:1;min-width:0"><b>@${html(ME)} ${ptag(meuP)}</b><small>${html(c.name)} - ${c.uf} · Nv ${levelOf(p)} · ${fmt(scoreOf(p))} pts · ${side}${meuP ? ' · ' + html(meuP.nome) : ''}</small></span></div>
-    <div class="mrow" style="margin-top:8px"><button class="chip" id="acCasa">📍 ver minha casa</button><button class="chip" id="acOut">sair da conta</button></div>
+    ${painel()}
     ${ok ? '' : '<p class="el-msg" style="color:var(--red)">A área de apoio está sendo ativada. Volte daqui a pouco!</p>'}
     <div class="sec"><h3>🤝 Pedir apoio</h3><div class="el-f"><input id="apH" placeholder="@ de quem você quer apoio" autocomplete="off" autocapitalize="none"><input id="apM" maxlength="140" placeholder="mensagem (opcional): ex. me apoia para prefeito!"><button class="chip y" id="apGo">pedir apoio</button></div><div class="el-msg" id="apMsg"></div>
     <p class="note">Avise a pessoa nos comentários ou no direct: ela entra aqui com o @ dela e aceita.</p></div>
@@ -2918,7 +2938,12 @@ async function openConta_() {
     <p class="note" style="margin-top:10px">Pedido de apoio não é voto: o voto acontece na eleição de sábado/domingo. Tudo aqui é de brincadeira, sem ligação com partidos reais.</p>`;
   const mc = $('mcard'); $('mx').onclick = closeModal;
   $('acOut').onclick = () => { ME = ''; try { localStorage.removeItem('vsp_me'); } catch (e) {} contaBadge(); openAcctLogin(); };
-  $('acCasa').onclick = () => { closeModal(); select(ci, ME); popHandle(ci, ME, 3); };
+  $('aCasa').onclick = () => { closeModal(); select(ci, ME); popHandle(ci, ME, 3); };
+  $('aEl').onclick = () => openElection();
+  $('aPerf').onclick = () => openProfile(ME);
+  $('aFol').onclick = () => openFollow();
+  $('aAli').onclick = () => openJoin('aliado', { city:ctag(ci) });
+  $('aRank').onclick = () => openRanking();
   $('apGo').onclick = async () => {
     const t = cleanE($('apH').value), m = $('apMsg');
     if (!t) return accMsg(m, 0, 'Coloque o @ de quem você quer apoio.');
@@ -2953,10 +2978,18 @@ async function contaBadge() {
   const b = document.getElementById('cConta'); if (!b) return;
   let n = 0;
   if (ME && sb) { const { count, error } = await withT(sb.from('vsp_apoio').select('id', { count:'exact', head:true }).eq('to_h', ME).eq('status', 'pendente')); if (!error) n = count || 0; }
-  b.innerHTML = '<span class="ai">👤</span><span class="t">' + (ME ? '@' + html(ME.length > 14 ? ME.slice(0, 13) + '…' : ME) : 'minha conta') + '</span>' + (n ? `<span class="bdg">${n}</span>` : '');
+  b.innerHTML = '<span class="ai">👤</span><span class="t">' + (ME ? '@' + html(ME.length > 14 ? ME.slice(0, 13) + '…' : ME) + (players[ME] ? ' · Nv ' + levelOf(players[ME]) : '') : 'minha conta') + '</span>' + (n ? `<span class="bdg">${n}</span>` : '');
 }
+// logado: preenche sozinho o @ em todas as telas do jogo (candidatura, voto, apoio, seguir, convites)
+new MutationObserver(() => {
+  if (!ME || !players[ME] || $('modal').hidden) return;
+  const mc = $('mcard'), c0 = cities[players[ME].casas[0]];
+  ['elH', 'supMe', 'flMe'].forEach(id => { const el = mc.querySelector('#' + id); if (el && !el.value && !el.dataset.me) { el.dataset.me = 1; el.value = ME; el.dispatchEvent(new Event('input')); } });
+  const jc = mc.querySelector('#jCity'); if (jc && !jc.value && !jc.dataset.me && c0) { jc.dataset.me = 1; jc.value = ctag(c0.i); jc.dispatchEvent(new Event('input')); }
+  const ev = mc.querySelector('#elV'); if (ev && !ev.value && !ev.dataset.me) { ev.dataset.me = 1; ev.value = ME; const g = mc.querySelector('#elVGo'); if (g) setTimeout(() => g.click(), 0); }
+}).observe($('mcard'), { childList:true, subtree:true });
 { const cb = document.createElement('button'); cb.className = 'acct'; cb.id = 'cConta'; cb.setAttribute('aria-label', 'Minha conta'); cb.innerHTML = '<span class="ai">👤</span><span class="t">minha conta</span>'; cb.onclick = openConta; $('app').appendChild(cb); }
-if (!window.__STATE) { loadPartidos(); contaBadge(); setInterval(contaBadge, 120000); }
+if (!window.__STATE) { loadPartidos(); contaBadge(); setTimeout(contaBadge, 6000); setInterval(contaBadge, 120000); }
 addEventListener('resize', updateElecArrow); setTimeout(updateElecArrow, 2500);
 
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
