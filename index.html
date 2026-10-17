@@ -1419,9 +1419,11 @@ function drawHouseTags(d) {
   cand.sort((a, b) => a[0] - b[0]);
   const placed = []; let n = 0;
   for (const [, x, y, inf, c] of cand) { if (n >= HTAG_N) break;
-    const w = 14 + Math.min(18, inf.h.length) * 6.2; if (placed.some(r => Math.abs(r[0] - x) < (r[2] + w) / 2 + 2 && Math.abs(r[1] - y) < 18)) continue;
-    placed.push([x, y, w]); const e = htags[n++], key = inf.h + inf.side + (c.f === inf.h ? 'f' : '');
-    if (e._k !== key) { e._k = key; e._h = inf.h; e.className = 'htag' + (c.f === inf.h ? ' f' : ''); e.innerHTML = `<i style="background:${'#' + SIDE_COL[inf.side].getHexString()}"></i>${html(showH(inf.h))}`; e.setAttribute('aria-label', 'Casa de ' + showH(inf.h)); }
+    const e = htags[n], key = inf.h + inf.side + (c.f === inf.h ? 'f' : '');
+    if (e._k !== key) { e._k = key; e._h = inf.h; e.className = 'htag' + (c.f === inf.h ? ' f' : ''); e.innerHTML = `<i style="background:${'#' + SIDE_COL[inf.side].getHexString()}"></i>${html(showH(inf.h))}`; e.setAttribute('aria-label', 'Casa de ' + showH(inf.h)); e._w = 0; }
+    if (!e._w) { e.hidden = false; e._w = e.offsetWidth || 90; e._hh = e.offsetHeight || 18; }
+    const w = e._w, hh = e._hh; if (placed.some(r => Math.abs(r[0] - x) < (r[2] + w) / 2 + 2 && Math.abs(r[1] - y) < (r[3] + hh) / 2 + 1)) continue;
+    placed.push([x, y, w, hh]); n++;
     e.hidden = false; e.style.left = x + 'px'; e.style.top = y + 'px'; }
   for (let i = n; i < HTAG_N; i++) htags[i].hidden = true;
   htagF = n;
