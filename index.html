@@ -291,7 +291,7 @@ const FIRST = ["ana","bruno","carla","diego","elisa","fabio","gabi","hugo","isis
 const LAST = ["quintela","brandao","siqueira","toledo","azevedo","peixoto","valadares","rocha","lacerda","faria","duarte","esteves"];
 const handle = () => pick(FIRST) + "." + pick(LAST);
 
-const LEVELS = [{ n:1, name:"casinha", min:0 }, { n:2, name:"sobrado", min:10 }, { n:3, name:"casa alta", min:20 }, { n:4, name:"mansão", min:35 }, { n:5, name:"torre", min:50 }, { n:6, name:"prédio", min:75 }, { n:7, name:"edifício", min:100 }, { n:8, name:"arranha-céu", min:150 }, { n:9, name:"torre de vidro", min:200 }, { n:10, name:"torre com heliponto", min:275 }, { n:11, name:"torre de luxo", min:350 }, { n:12, name:"megatorre", min:450 }, { n:13, name:"torre dourada", min:600 }, { n:14, name:"torre de diamante", min:800 }, { n:15, name:"o topo do mapa", min:1100 }];
+const LEVELS = [{ n:1, name:"casinha", min:0 }, { n:2, name:"sobrado", min:100 }, { n:3, name:"casa alta", min:250 }, { n:4, name:"mansão", min:400 }, { n:5, name:"torre", min:550 }, { n:6, name:"prédio", min:750 }, { n:7, name:"edifício", min:1000 }, { n:8, name:"arranha-céu", min:1500 }, { n:9, name:"torre de vidro", min:2000 }, { n:10, name:"torre com heliponto", min:2750 }, { n:11, name:"torre de luxo", min:3500 }, { n:12, name:"megatorre", min:4500 }, { n:13, name:"torre dourada", min:6000 }, { n:14, name:"torre de diamante", min:8000 }, { n:15, name:"o topo do mapa", min:11000 }];
 const levelOfScore = s => LEVELS.reduce((l, L) => s >= L.min ? L.n : l, 1);
 const scoreOf = p => p.pts;           // pontos totais: nível da casa (não zeram)
 const wkOf = p => p.wk || 0;          // pontos do mandato da semana: definem os cargos (zeram no domingo 21h)
@@ -575,6 +575,7 @@ for (let i = 0; i < 9; i++) {
 function P(geo, color, x, y, z, o = {}) {
   let g = geo.index ? geo.toNonIndexed() : geo;
   if (o.rz) g.rotateZ(o.rz);
+  if (o.rx) g.rotateX(o.rx);
   if (o.ry) g.rotateY(o.ry);
   if (o.s) g.scale(...o.s);
   g.translate(x, y, z);
@@ -601,13 +602,42 @@ const floors = (w, d, x, z, y0, n, fh, wall, win) => {
 };
 const CREAM = '#efe3cf', TERRA = '#c9714f', WIN = '#3b4a5c', DOORC = '#7a4a2a', GOLD = '#d4a63a';
 const flagPole = (x, y0, h, z) => box(.025, h, .025, '#3a3f4b', x, y0, z);
+// casinha / sobrado: lote com gramado, telhado de telha laranja, portas de madeira, janelas com moldura
+const CWALL = '#ebc898';
+const lotBase = () => [box(.98, .02, .9, '#9b9a94', 0, 0, .04), box(.94, .026, .86, '#4f9a3a', 0, 0, .04)];
+const casaRoof = (y, w, d) => {
+  const hw = w / 2 + .11, rh = .26, ang = Math.atan2(rh, hw), L = Math.hypot(hw, rh) + .02, D = d + .16;
+  const e = rh * (hw - w / 2) / hw;
+  const out = [box(w, e, d, CWALL, 0, y, 0), gable(w, rh - e, d, CWALL, 0, y + e, 0), P(new THREE.CylinderGeometry(.028, .028, D + .01, 8), '#cf5a26', 0, y + rh + .005, 0, { rx:Math.PI / 2 })];
+  for (const sg of [-1, 1]) {
+    out.push(P(new THREE.BoxGeometry(L, .035, D), '#e2672e', sg * hw / 2, y + rh / 2 + .01, 0, { rz:-sg * ang }));
+    for (const t of [.2, .4, .6, .8]) out.push(P(new THREE.BoxGeometry(.012, .02, D + .004), '#c4521f', sg * hw * (1 - t), y + rh * t + .03, 0, { rz:-sg * ang }));
+  }
+  return out;
+};
+const casaDoor = (x, y, z, h = .22) => [box(.15, h + .03, .022, '#9a4f22', x, y, z), box(.11, h - .01, .03, '#8a5530', x, y + .01, z + .001), box(.012, .03, .012, '#d9d9d9', x + .035, y + h * .45, z + .02)];
+const steps = x => [box(.22, .03, .1, '#bdbdb7', x, .02, .3), box(.2, .03, .06, '#c9c9c3', x, .05, .28)];
+const winZ = (x, y, z) => [box(.17, .14, .016, '#f4f4f2', x, y, z), box(.14, .11, .022, '#33414f', x, y + .015, z + .002), box(.006, .11, .026, '#e6e6e6', x, y + .015, z + .002)];
+const winX = (x, y, z) => [box(.016, .14, .17, '#f4f4f2', x, y, z), box(.022, .11, .14, '#33414f', x + Math.sign(x) * .002, y + .015, z), box(.026, .11, .006, '#e6e6e6', x + Math.sign(x) * .002, y + .015, z)];
+const bushes = () => [P(new THREE.IcosahedronGeometry(.075, 0), '#3d8030', -.36, .07, .3), P(new THREE.IcosahedronGeometry(.06, 0), '#4c9a38', -.27, .065, .35),
+  P(new THREE.IcosahedronGeometry(.07, 0), '#3d8030', .36, .07, -.28), P(new THREE.IcosahedronGeometry(.06, 0), '#4c9a38', .25, .06, .35)];
 const LEVEL_DEF = [
-  { name:'casinha', flag:[.38, .7, .34], parts:[
-    box(.6, .38, .5, CREAM, 0, 0, 0), gable(.74, .26, .62, TERRA, 0, .38, 0),
-    box(.12, .22, .02, DOORC, .1, 0, .255), box(.14, .11, .02, WIN, -.15, .15, .255), flagPole(.38, 0, .7, .34)] },
-  { name:'sobrado', flag:[.38, .9, .34], parts:[
-    box(.56, .7, .5, CREAM, 0, 0, 0), gable(.7, .26, .62, TERRA, 0, .7, 0),
-    box(.12, .22, .02, DOORC, .1, 0, .255), box(.14, .11, .02, WIN, -.14, .15, .255), box(.14, .11, .02, WIN, -.14, .48, .255), box(.14, .11, .02, WIN, .12, .48, .255), flagPole(.38, 0, .9, .34)] },
+  { name:'casinha', flag:[.4, .72, -.36], parts:[...lotBase(), ...casaRoof(.4, .6, .5),
+      box(.6, .38, .5, CWALL, 0, .02, 0), box(.614, .075, .514, '#8e8e8a', 0, .02, 0),
+      ...casaDoor(.1, .02, .251), ...steps(.1), ...winZ(-.15, .16, .252), ...winX(.302, .16, -.06), ...winX(-.302, .16, -.06),
+      ...bushes(), flagPole(.4, .02, .72, -.36)] },
+  { name:'sobrado', flag:[.4, 1.06, -.36], parts:[...lotBase(), ...casaRoof(.74, .6, .5),
+      box(.6, .36, .5, CWALL, 0, .02, 0), box(.614, .075, .514, '#8e8e8a', 0, .02, 0),        // térreo
+      box(.63, .045, .53, '#b9b8b2', 0, .38, 0),                                                 // laje / faixa
+      box(.6, .315, .36, CWALL, 0, .425, -.07), box(.26, .315, .14, CWALL, -.17, .425, .18),    // andar de cima (recuado na sacada)
+      box(.04, .315, .04, CWALL, .28, .425, .23),                                                // pilar da sacada
+      box(.33, .03, .14, '#a9a8a2', .135, .425, .18),                                            // piso da sacada
+      ...[.0, .1, .2, .29].map(x => box(.012, .12, .012, '#3a3d42', x, .455, .245)), box(.32, .014, .014, '#3a3d42', .135, .575, .245),
+      box(.012, .012, .13, '#3a3d42', .29, .575, .18),
+      ...casaDoor(.05, .455, .111, .2), cyl(.022, .016, .045, 8, '#7c7f84', -.02, .455, .21), P(new THREE.IcosahedronGeometry(.035, 0), '#3f8a33', -.02, .52, .21),
+      ...winZ(.18, .54, .112), ...winX(-.302, .55, -.06), ...winX(.302, .55, -.1), ...winZ(-.17, .55, .252),
+      ...casaDoor(-.12, .02, .251), ...steps(-.12), ...winZ(.15, .15, .252), ...winX(-.302, .15, -.06), ...winX(.302, .15, -.06),
+      ...bushes(), flagPole(.4, .02, 1.06, -.36)] },
   { name:'casa alta', flag:[.38, 1.2, .34], parts:[
     ...floors(.5, .5, 0, 0, 0, 3, .32, CREAM, WIN), box(.56, .06, .56, TERRA, 0, .96, 0), box(.18, .1, .18, '#e0d6c4', .1, 1.02, -.1),
     box(.12, .2, .02, DOORC, 0, 0, .262), flagPole(.38, 0, 1.2, .34)] },
@@ -2664,7 +2694,7 @@ function openCities() {
 { const cb = document.createElement('button'); cb.className = 'chip'; cb.id = 'cCities'; cb.textContent = 'cidades'; cb.onclick = openCities; $('cRank').after(cb); }
 
 $('cLevels').onclick = () => openModal(`<h2>Níveis da casa</h2>
-  <p>Cada @ é uma casa com a bandeira do seu lado. A casa sobe de nível conforme a pontuação total do jogador (casas conquistadas + pontos). Do nível 5 em diante a casa vira prédio; os níveis mais altos ficam perto da praça e formam o centro da cidade.</p>
+  <p>Cada @ é uma casa com a bandeira do seu lado. A casa sobe de nível conforme a pontuação total do jogador (casas conquistadas + pontos). A casinha fica no nível 1 até 100 pontos; do nível 5 em diante vira prédio; os níveis mais altos ficam perto da praça e formam o centro da cidade.</p>
   <div class="lv">${LEVELS.map((L, i) => `<div>${lvImg(L.n)}<b>Nv ${L.n} · ${L.name}</b><span>${LEVELS[i + 1] ? `${L.min}–${LEVELS[i + 1].min - 1} pts` : `${L.min}+ pts`}</span></div>`).join('')}</div>`, true);
 
 // ======================= APP (PWA): instalar no celular =======================
@@ -2718,14 +2748,14 @@ const OFFICES = {
 const OFF_ORDER = ['pres', 'gov', 'sen', 'dep', 'pref', 'ver'];
 // partidos fictícios do jogo (sem relação com partidos reais)
 const PARTIES = ['Partido da Praça', 'Frente dos Fundadores', 'Aliança Arranha-Céu', 'Movimento Casinha', 'Liga do Semáforo Verde', 'União dos Bairros', 'Independente'];
-const PRES_MIN_LV = 5;
+const PRES_MIN_LV = 5, PRES_MIN_PTS = 50;
 const raceKey = (o, sc) => o + ':' + sc;
 function raceScope(h, o) { const p = players[h]; if (!p || !p.casas.length) return null; const sc = OFFICES[o].sc; return sc === 'BR' ? 'BR' : sc === 'uf' ? homeUf(p) : String(p.casas[0]); }
 function raceName(race) { const [o, sc] = race.split(':'); const O = OFFICES[o]; if (!O) return race; return O.sc === 'BR' ? `${O.n} do Brasil` : O.sc === 'uf' ? `${O.n} · ${STATE[sc] || sc}` : `${O.n} · ${cities[+sc] ? cities[+sc].name + ' - ' + cities[+sc].uf : sc}`; }
 function canRun(h, o) {
   const p = players[h];
   if (!p || !p.casas.length) return 'Esse @ ainda não tem casa no mapa. Comente sua cidade no post primeiro.';
-  if (o === 'pres' && levelOf(p) < PRES_MIN_LV) return `Para presidente, a casa precisa ser nível ${PRES_MIN_LV} ou mais (você está no nível ${levelOf(p)}).`;
+  if (o === 'pres' && scoreOf(p) < PRES_MIN_PTS) return `Para presidente, você precisa ter ${PRES_MIN_PTS} pontos ou mais (você tem ${scoreOf(p)}).`;
   return '';
 }
 function canVote(h, race) {
@@ -2783,7 +2813,7 @@ document.head.appendChild(eCss);
 function elecHead(k) {
   const ph = [['candidaturas', 'Sáb 12h–19h · candidaturas'], ['votacao', 'Sáb 19h–Dom 21h · votação'], ['resultado', 'Dom 21h · resultado e posse']];
   return `<h2>🗳️ Eleição da semana</h2><div class="el-ph">${ph.map(([f, t]) => `<span class="${k.fase === f ? 'on' : ''}">${t}</span>`).join('')}</div>
-  <p>${elecLine()}. Cada @ pode se candidatar a <b>um</b> cargo por eleição e tem <b>1 voto em cada cargo</b>. Para presidente, a casa precisa ser nível ${PRES_MIN_LV}+. Quem ganha recebe o título quando a página confirma a posse.</p>`;
+  <p>${elecLine()}. Cada @ pode se candidatar a <b>um</b> cargo por eleição e tem <b>1 voto em cada cargo</b>. Para presidente, é preciso ter ${PRES_MIN_PTS}+ pontos. Quem ganha recebe o título quando a página confirma a posse.</p>`;
 }
 function loginGate(what) {
   return `<div class="sec"><div class="el-lock">🔒 <b>Só quem está logado pode ${what}.</b><br>Entre na sua conta com o seu @ (precisa ter casa no mapa).<div class="mrow" style="justify-content:center"><button class="chip y" id="elLogin">👤 entrar na minha conta</button></div></div></div>`;
@@ -3569,7 +3599,7 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
     <li><b>+5 🗳️</b><span>Cada voto (apoio) que você recebe: abra o perfil de alguém, toque em "apoiar" e coloque seu @ (presidente: qualquer um; governador: mesmo estado; prefeito: mesma cidade).</span></li>
     <li><b>📈</b><span>Quanto mais pontos, <b>maior a casa</b>: de casinha a arranha-céu (veja "níveis").</span></li>
     <li><b>🏛️</b><span>Os cargos são decididos na eleição. <b>Cidade:</b> prefeito + 10 vereadores. <b>Estado:</b> governador, senador e 2 deputados federais. <b>Brasil:</b> presidente. O mandato dura <b>1 semana</b> e termina quando sai o resultado da eleição seguinte. <b>Só o fundador da cidade é permanente.</b></span></li>
-    <li><b>🗳️</b><span><b>Eleição toda semana</b> (botão "🗳️ eleição"): candidaturas no <b>sábado das 12h às 19h</b> (1 cargo por @, escolhendo um partido do jogo; para presidente a casa precisa ser nível 5). Às 19h sai a lista e abre a votação até <b>domingo 21h</b>: cada @ com casa tem <b>1 voto em cada cargo</b> (prefeito e vereador da sua cidade; governador, senador e deputado do seu estado; presidente). Quem vence recebe o título quando a página confirma a posse.</span></li>
+    <li><b>🗳️</b><span><b>Eleição toda semana</b> (botão "🗳️ eleição"): candidaturas no <b>sábado das 12h às 19h</b> (1 cargo por @, escolhendo um partido do jogo; para presidente é preciso ter 50+ pontos). Às 19h sai a lista e abre a votação até <b>domingo 21h</b>: cada @ com casa tem <b>1 voto em cada cargo</b> (prefeito e vereador da sua cidade; governador, senador e deputado do seu estado; presidente). Quem vence recebe o título quando a página confirma a posse.</span></li>
     <li><b>⏳</b><span>Eleição todo domingo às 21h: os cargos vão para o histórico, os votos e os pontos do mandato reiniciam; os pontos de nível da sua casa continuam.</span></li>
     <li><b>⚽</b><span>Comente também o seu time e ganhe uma cadeira na arquibancada do Maracanã, no Rio.</span></li>
     <li><b>+15 ✅</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> (a página confere e confirma). Também garante sua casa; ache seu @ pelo link da bio.</span></li>
