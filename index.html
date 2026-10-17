@@ -322,11 +322,12 @@ const showH = h => '@' + h;
 const igUrl = h => 'https://www.instagram.com/' + encodeURIComponent(h) + '/';
 const igLink = (h, label) => `<a class="ig" href="${igUrl(h)}" target="_blank" rel="noopener"><span class="igi" aria-hidden="true"></span>${label || 'abrir @' + h + ' no Instagram'}</a>`;
 let STATE_V = 0, ADMIN = false, dirty = false, ART = null;
+let TITLES = {}; // eleição: cargo → eleitos com posse
 const DRAFT = 'vsp-rascunho-v1';
 let POST = '';
 const nextSunday21 = ts => { const br = new Date(ts - 3 * 3600e3); const base = Date.UTC(br.getUTCFullYear(), br.getUTCMonth(), br.getUTCDate(), 21, 0, 0); let add = (7 - br.getUTCDay()) % 7; if (add === 0 && br.getUTCHours() >= 21) add = 7; return base + add * 864e5 + 3 * 3600e3; };
 let MAND = { n:1, end:nextSunday21(Date.now()) }, HIST = [];
-function snapshot() { return { v:STATE_V, a:cities.filter(c => TOT(c)).map(c => c.n ? [c.i, c.b, c.r, c.f || null, c.n] : [c.i, c.b, c.r, c.f || null]), p:players, k:[...credited], post:POST, c:[...COMMENTED], m:MAND, h:HIST }; }
+function snapshot() { return { v:STATE_V, a:cities.filter(c => TOT(c)).map(c => c.n ? [c.i, c.b, c.r, c.f || null, c.n] : [c.i, c.b, c.r, c.f || null]), p:players, k:[...credited], post:POST, c:[...COMMENTED], m:MAND, h:HIST, t:TITLES }; }
 function applyState(d) {
   cities.forEach(c => { c.b = 0; c.r = 0; c.n = 0; c.f = null; c.inf = null; });
   for (const k in players) delete players[k];
@@ -336,7 +337,7 @@ function applyState(d) {
   Object.assign(players, d.p || {}); Object.values(players).forEach(fixP); (d.k || []).forEach(k => credited.add(k));
   POST = d.post || '';
   COMMENTED.clear(); (d.c || []).forEach(k => COMMENTED.add(k));
-  MAND = d.m && d.m.end ? d.m : { n:1, end:nextSunday21(Date.now()) }; HIST = d.h || [];
+  MAND = d.m && d.m.end ? d.m : { n:1, end:nextSunday21(Date.now()) }; HIST = d.h || []; TITLES = d.t || {};
 }
 try { const d = JSON.parse(document.getElementById('state').textContent || '{}'); STATE_V = d.v || 0; applyState(d); } catch (e) {}
 // rascunho do dono: alterações ainda não publicadas
@@ -726,6 +727,8 @@ function officials(ci) {
   const L = Object.keys(players).filter(h => players[h].casas.includes(ci) && players[h].side && !HIGHSET.has(h))
     .sort((a, b) => wkOf(players[b]) - wkOf(players[a]) || scoreOf(players[b]) - scoreOf(players[a]) || ((c.f === b) - (c.f === a)) || arr(a) - arr(b))
     .map(h => [h, wkOf(players[h])]);
+  const eP = elected('pref:' + ci), eV = elected('ver:' + ci);
+  if (eP.length || eV.length) { const wk = h => [h, wkOf(players[h])]; return { pref:eP.length ? wk(eP[0].h) : null, ver:eV.map(x => wk(x.h)).slice(0, 10), eleito:true }; }
   return { pref:L[0] || null, ver:L.slice(1, 11) };
 }
 function rolesOf(h) {
@@ -779,7 +782,10 @@ function rebuildAll() {
   cands.forEach(e => { if (presSet.has(e[0])) return; const uf = homeUf(e[1]); (byUf[uf] = byUf[uf] || []).push(e); });
   const electGov = elect;
   Object.entries(byUf).forEach(([uf, L]) => { L.sort(electGov); if (L[0]) OFF.gov[uf] = L[0][0]; if (L[1]) OFF.sen[uf] = L[1][0]; OFF.dep[uf] = L.slice(2, 4).map(e => e[0]); });
-  HIGHSET = new Set([...presSet, ...Object.values(OFF.gov), ...Object.values(OFF.sen), ...Object.values(OFF.dep).flat()]);
+  // títulos ganhos na eleição (com posse) valem mais que o ranking de pontos
+  { const ep = elected('pres:BR'); if (ep.length) { const p = players[ep[0].h]; presidents = { b:null, r:null, n:null }; presidents[p.side || 'n'] = [ep[0].h, wkOf(p)]; } }
+  Object.keys(STATE).forEach(uf => { const g = elected('gov:' + uf), s2 = elected('sen:' + uf), d2 = elected('dep:' + uf); if (g.length) OFF.gov[uf] = g[0].h; if (s2.length) OFF.sen[uf] = s2[0].h; if (d2.length) OFF.dep[uf] = d2.map(x => x.h); });
+  HIGHSET = new Set([...Object.values(presidents).filter(Boolean).map(x => x[0]), ...Object.values(OFF.gov), ...Object.values(OFF.sen), ...Object.values(OFF.dep).flat()]);
   for (const [h, p] of Object.entries(players)) {
     if (!p.side) continue;
     const sc = scoreOf(p), lvl = levelOf(p);
@@ -1553,7 +1559,7 @@ function renderBoard(B, R) {
     <h4>Brasil inteiro</h4>
     <div class="sides"><div class="b"><small>🔵 Direita</small><b>${fmt(nb)}</b></div><div class="r"><small>🔴 Esquerda</small><b>${fmt(nr)}</b></div><div class="n"><small>⚪ Sem lado</small><b>${fmt(nn)}</b></div></div>
     <div class="hide-p">
-    <div class="mand" id="mandEl">${mandText()}</div>
+    <button class="elec" id="elecEl">${elecLine()}</button><div class="mand" id="mandEl">${mandText()}</div>
     <h4>Presidente até agora · quem mais pontua</h4>
     ${pr ? `<button class="pres" data-h="${html(pr[0])}">🏛️ ${sideEmo(players[pr[0]].side)} ${html(showH(pr[0]))}</button>` : '<p class="note" style="margin:0 0 8px">Ninguém ainda: comente e seja o primeiro!</p>'}
     <h4>Top cidades <button class="pp go" id="bdAll" style="font-size:10.5px;padding:0 6px;margin-left:4px">ver todas</button></h4>
@@ -1562,6 +1568,7 @@ function renderBoard(B, R) {
   board.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => select(+b.dataset.ci));
   const ba = board.querySelector('#bdAll'); if (ba) ba.onclick = openCities;
   board.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
+  const eb2 = board.querySelector('#elecEl'); if (eb2) eb2.onclick = openElection;
   addCloser(board, 'board'); applyFold();
 }
 // ---------- Painéis recolhíveis: X para fechar "Brasil inteiro" e "População"; um botão pequeno reabre ----------
@@ -2463,6 +2470,164 @@ function openCities() {
 $('cLevels').onclick = () => openModal(`<h2>Níveis da casa</h2>
   <p>Cada @ é uma casa com a bandeira do seu lado. A casa sobe de nível conforme a pontuação total do jogador (casas conquistadas + pontos). Do nível 5 em diante a casa vira prédio; os níveis mais altos ficam perto da praça e formam o centro da cidade.</p>
   <div class="lv">${LEVELS.map((L, i) => `<div>${lvImg(L.n)}<b>Nv ${L.n} · ${L.name}</b><span>${LEVELS[i + 1] ? `${L.min}–${LEVELS[i + 1].min - 1} pts` : `${L.min}+ pts`}</span></div>`).join('')}</div>`, true);
+
+// ======================= ELEIÇÕES SEMANAIS =======================
+// Sábado 12h–19h: candidaturas (o dono aprova) · Sábado 19h: lista de candidatos · Votação até domingo 21h
+// 1 voto por @ em cada cargo · Quem vence recebe o título quando o dono dá a posse.
+const OFFICES = {
+  pres:{ n:'Presidente', sc:'BR', seats:1, max:8, ic:'🇧🇷' }, gov:{ n:'Governador(a)', sc:'uf', seats:1, max:5, ic:'🗺️' },
+  sen:{ n:'Senador(a)', sc:'uf', seats:1, max:5, ic:'🏛️' }, dep:{ n:'Deputado(a) federal', sc:'uf', seats:2, max:10, ic:'📜' },
+  pref:{ n:'Prefeito(a)', sc:'city', seats:1, max:5, ic:'🏙️' }, ver:{ n:'Vereador(a)', sc:'city', seats:10, max:20, ic:'🪑' },
+};
+const OFF_ORDER = ['pres', 'gov', 'sen', 'dep', 'pref', 'ver'];
+// partidos fictícios do jogo (sem relação com partidos reais)
+const PARTIES = ['Partido da Praça', 'Frente dos Fundadores', 'Aliança Arranha-Céu', 'Movimento Casinha', 'Liga do Semáforo Verde', 'União dos Bairros', 'Independente'];
+const PRES_MIN_LV = 5;
+const raceKey = (o, sc) => o + ':' + sc;
+function raceScope(h, o) { const p = players[h]; if (!p || !p.casas.length) return null; const sc = OFFICES[o].sc; return sc === 'BR' ? 'BR' : sc === 'uf' ? homeUf(p) : String(p.casas[0]); }
+function raceName(race) { const [o, sc] = race.split(':'); const O = OFFICES[o]; if (!O) return race; return O.sc === 'BR' ? `${O.n} do Brasil` : O.sc === 'uf' ? `${O.n} · ${STATE[sc] || sc}` : `${O.n} · ${cities[+sc] ? cities[+sc].name + ' - ' + cities[+sc].uf : sc}`; }
+function canRun(h, o) {
+  const p = players[h];
+  if (!p || !p.casas.length) return 'Esse @ ainda não tem casa no mapa. Comente sua cidade no post primeiro.';
+  if (o === 'pres' && levelOf(p) < PRES_MIN_LV) return `Para presidente, a casa precisa ser nível ${PRES_MIN_LV} ou mais (você está no nível ${levelOf(p)}).`;
+  return '';
+}
+function canVote(h, race) {
+  const p = players[h]; if (!p || !p.casas.length) return false;
+  const [o, sc] = race.split(':'), S = OFFICES[o].sc;
+  return S === 'BR' || (S === 'uf' ? homeUf(p) === sc : p.casas.includes(+sc));
+}
+// relógio de Brasília (UTC-3) e fases
+const brNow = () => new Date(Date.now() - 3 * 3600e3);
+function elecClock() {
+  const n = brNow(), dow = n.getUTCDay(), h = n.getUTCHours() + n.getUTCMinutes() / 60;
+  const fase = dow === 6 && h >= 12 && h < 19 ? 'candidaturas' : (dow === 6 && h >= 19) || (dow === 0 && h < 21) ? 'votacao' : 'resultado';
+  const s = new Date(n.getTime() - 12 * 3600e3), sat = new Date(s.getTime() - ((s.getUTCDay() + 1) % 7) * 864e5), ed = sat.toISOString().slice(0, 10);
+  const at = (d, hh) => { const x = new Date(Date.UTC(sat.getUTCFullYear(), sat.getUTCMonth(), sat.getUTCDate() + d, hh)); return x.getTime(); };
+  const tCand = at(0, 12), tVote = at(0, 19), tEnd = at(1, 21), tNext = at(7, 12), now = n.getTime();
+  const next = fase === 'candidaturas' ? ['a lista de candidatos sai', tVote] : fase === 'votacao' ? ['a votação fecha', tEnd] : now < tCand ? ['as candidaturas abrem', tCand] : ['as candidaturas abrem', tNext];
+  return { fase, ed, next, now };
+}
+const dur = ms => { ms = Math.max(0, ms); const d = Math.floor(ms / 864e5), h = Math.floor(ms % 864e5 / 36e5), m = Math.floor(ms % 36e5 / 6e4); return (d ? d + 'd ' : '') + h + 'h ' + String(m).padStart(2, '0') + 'min'; };
+function elecLine() {
+  const k = elecClock(), [what, t] = k.next;
+  const f = k.fase === 'candidaturas' ? '📝 Candidaturas abertas' : k.fase === 'votacao' ? '🗳️ Votação aberta' : '🗳️ Eleição';
+  return `${f} · ${what} em ${dur(t - k.now)}`;
+}
+// títulos empossados: race → [{ h, party, ed, n }]
+function elected(race) { return (TITLES[race] || []).filter(x => players[x.h]); }
+// banco
+async function dbCands(ed, all) {
+  if (!sb) return [];
+  let q = sb.from('vsp_cands').select('id,handle,office,scope,party,side,status,created_at').eq('ed', ed).order('id').limit(2000);
+  if (!all) q = q.eq('status', 'aprovada');
+  const { data, error } = await q; return error ? [] : data || [];
+}
+async function dbCounts(ed) { if (!sb) return {}; const { data, error } = await sb.rpc('vsp_apuracao', { p_ed:ed }); const m = {}; (error ? [] : data || []).forEach(r => { (m[r.race] = m[r.race] || {})[r.cand] = Number(r.n); }); return m; }
+async function dbVoted(ed, h) { if (!sb) return new Set(); const { data, error } = await sb.rpc('vsp_ja_votou', { p_ed:ed, p_voter:h }); return new Set((error ? [] : data || []).map(r => r.race)); }
+function winners(race, cands, counts) {
+  const o = race.split(':')[0], L = cands.filter(c => raceKey(c.office, c.scope) === race).map(c => ({ h:c.handle, party:c.party, side:c.side, n:(counts[race] || {})[c.handle] || 0 }));
+  L.sort((a, b) => b.n - a.n || scoreOf(players[b.h] || { pts:0 }) - scoreOf(players[a.h] || { pts:0 }) || a.h.localeCompare(b.h));
+  return { list:L, win:L.filter(x => x.n > 0).slice(0, OFFICES[o].seats) };
+}
+const cleanE = v => (v || '').trim().toLowerCase().replace(/^@/, '').replace(/[^a-z0-9._]/g, '');
+const eCss = document.createElement('style');
+eCss.textContent = `.el-ph{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}.el-ph span{border:2px solid var(--ink);border-radius:99px;padding:3px 10px;font-weight:900;font-size:12px;background:var(--line)}.el-ph span.on{background:var(--sun)}
+.el-race{border:2px solid var(--ink);border-radius:14px;padding:10px 12px;margin-top:10px}.el-race h4{margin:0 0 6px;font-family:var(--display);font-weight:400;font-size:18px}
+.el-c{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-weight:800;font-size:14px}.el-c .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.el-c small{color:var(--muted);font-weight:800}
+.el-c .vt{font-family:var(--display);font-size:18px;min-width:34px;text-align:right}.el-c .chip{font-size:14px;padding:3px 12px;box-shadow:0 2px 0 var(--ink)}.el-c.win{background:#fff4cf;border-radius:10px;padding:6px 8px}
+.el-f{display:grid;gap:8px;margin-top:8px}.el-f input,.el-f select{border:2px solid var(--ink);border-radius:12px;padding:9px 12px;font:800 15px var(--body);background:#fff}.el-msg{font-weight:800;font-size:13px;margin-top:6px}
+#board .elec{display:block;width:100%;text-align:left;font:900 11.5px var(--body);background:var(--sun);border:2px solid var(--ink);border-radius:10px;padding:5px 8px;margin-bottom:8px;cursor:pointer}`;
+document.head.appendChild(eCss);
+function elecHead(k) {
+  const ph = [['candidaturas', 'Sáb 12h–19h · candidaturas'], ['votacao', 'Sáb 19h–Dom 21h · votação'], ['resultado', 'Dom 21h · resultado e posse']];
+  return `<h2>🗳️ Eleição da semana</h2><div class="el-ph">${ph.map(([f, t]) => `<span class="${k.fase === f ? 'on' : ''}">${t}</span>`).join('')}</div>
+  <p>${elecLine()}. Cada @ pode se candidatar a <b>um</b> cargo por eleição e tem <b>1 voto em cada cargo</b>. Para presidente, a casa precisa ser nível ${PRES_MIN_LV}+. Quem ganha recebe o título quando a página confirma a posse.</p>`;
+}
+async function openElection() {
+  const k = elecClock();
+  openModal(elecHead(k) + '<p>Carregando…</p>', true);
+  const mc = $('mcard'), head = () => `<button class="mx" id="mx" aria-label="Fechar">✕</button>` + elecHead(k);
+  const bindX = () => { const x = mc.querySelector('#mx'); if (x) x.onclick = closeModal; };
+  if (k.fase === 'candidaturas') {
+    mc.innerHTML = head() + `<div class="sec"><h3>Quero me candidatar</h3>
+      <div class="el-f"><input id="elH" placeholder="Coloque seu @ aqui" autocomplete="off">
+      <select id="elO">${OFF_ORDER.map(o => `<option value="${o}">${OFFICES[o].ic} ${OFFICES[o].n}</option>`).join('')}</select>
+      <select id="elP"><option value="">Escolha seu partido</option>${PARTIES.map(p => `<option>${p}</option>`).join('')}</select>
+      <button class="chip y" id="elGo">enviar candidatura</button></div><div class="el-msg" id="elMsg"></div>
+      <p class="note">Os partidos são do jogo (fictícios). A página confere e aprova as candidaturas; a lista sai sábado às 19h. Vagas por cargo: presidente ${OFFICES.pres.max}, governador ${OFFICES.gov.max}, senador ${OFFICES.sen.max}, deputado ${OFFICES.dep.max} por estado, prefeito ${OFFICES.pref.max} e vereador ${OFFICES.ver.max} por cidade.</p></div>`;
+    bindX();
+    const info = () => { const h = cleanE($('elH').value), o = $('elO').value; if (!h) { $('elMsg').textContent = ''; return; } const why = canRun(h, o); const sc = raceScope(h, o); $('elMsg').textContent = why || `Você vai concorrer a ${raceName(raceKey(o, sc))}.`; $('elMsg').style.color = why ? 'var(--red)' : '#1f9d55'; };
+    $('elH').oninput = info; $('elO').onchange = info;
+    $('elGo').onclick = async () => {
+      const h = cleanE($('elH').value), o = $('elO').value, party = $('elP').value, msg = $('elMsg');
+      msg.style.color = 'var(--red)';
+      if (!h) { msg.textContent = 'Coloque seu @.'; return; }
+      const why = canRun(h, o); if (why) { msg.textContent = why; return; }
+      if (!party) { msg.textContent = 'Escolha um partido.'; return; }
+      const sc = raceScope(h, o), race = raceKey(o, sc);
+      const ap = (await dbCands(k.ed)).filter(c => raceKey(c.office, c.scope) === race).length;
+      if (ap >= OFFICES[o].max) { msg.textContent = `As vagas de ${raceName(race)} já acabaram nesta eleição.`; return; }
+      if (!sb) { msg.textContent = 'Sem conexão agora.'; return; }
+      const { error } = await sb.from('vsp_cands').insert({ ed:k.ed, handle:h, office:o, scope:sc, party, side:players[h].side || 'n' });
+      if (!error) { msg.style.color = '#1f9d55'; msg.textContent = `✅ Candidatura enviada: @${h} para ${raceName(race)} (${party}). A página vai conferir; a lista sai às 19h.`; return; }
+      msg.textContent = /duplicate|unique/i.test(error.message || '') ? 'Esse @ já se candidatou nesta eleição (só 1 cargo por eleição).' : /row-level|policy/i.test(error.message || '') ? 'Agora não dá: as candidaturas são aos sábados, das 12h às 19h (horário de Brasília), e o @ precisa ter casa no mapa.' : 'Não deu para enviar agora. Tente de novo.';
+    };
+    return;
+  }
+  const cands = await dbCands(k.ed), counts = await dbCounts(k.ed);
+  const races = [...new Set(cands.map(c => raceKey(c.office, c.scope)))].sort((a, b) => OFF_ORDER.indexOf(a.split(':')[0]) - OFF_ORDER.indexOf(b.split(':')[0]) || a.localeCompare(b));
+  const raceHTML = (race, voteable, voted) => { const { list, win } = winners(race, cands, counts), done = k.fase === 'resultado', ws = new Set(win.map(x => x.h)), emp = new Set(elected(race).filter(x => x.ed === k.ed).map(x => x.h));
+    return `<div class="el-race"><h4>${OFFICES[race.split(':')[0]].ic} ${html(raceName(race))}</h4>${list.map(c => `<div class="el-c ${done && ws.has(c.h) ? 'win' : ''}"><span class="dot ${c.side || 'n'}"></span><span class="nm">@${html(c.h)} <small>· ${html(c.party)}</small></span><span class="vt">${c.n}</span>${
+      done ? (ws.has(c.h) ? `<small>${emp.has(c.h) ? '🎖️ empossado' : '🏆 eleito · aguardando posse'}</small>` : '') : voteable ? (voted || c.h === h ? "" : `<button class="chip y" data-v="${race}|${c.h}">votar</button>`) : ''}</div>`).join('')}${voted && !done ? '<p class="note" style="margin:6px 0 0">✓ seu voto neste cargo já foi registrado</p>' : ''}</div>`; };
+  const render = (h, voted) => {
+    const mine = h && players[h] ? races.filter(r => canVote(h, r)) : [];
+    const rest = races.filter(r => !mine.includes(r));
+    let body = '';
+    if (k.fase === 'votacao') body += `<div class="sec"><h3>Votar</h3><div class="el-f"><input id="elV" placeholder="Coloque seu @ aqui para votar" value="${html(h || '')}" autocomplete="off"><button class="chip y" id="elVGo">ver meus cargos</button></div><div class="el-msg" id="elMsg"></div></div>`;
+    if (!races.length) body += `<p>${k.fase === 'votacao' ? 'Nenhuma candidatura aprovada nesta eleição.' : 'Ainda não houve votação nesta semana.'}</p>`;
+    if (mine.length) body += `<div class="sec"><h3>${k.fase === 'votacao' ? 'Seus cargos para votar' : 'Seus cargos'}</h3>${mine.map(r => raceHTML(r, k.fase === 'votacao', voted.has(r))).join('')}</div>`;
+    if (rest.length) body += `<div class="sec"><h3>${k.fase === 'votacao' ? 'Outras disputas (apuração ao vivo)' : 'Resultado'}</h3>${rest.slice(0, 40).map(r => raceHTML(r, false, false)).join('')}</div>`;
+    mc.innerHTML = head() + body; bindX();
+    const go = mc.querySelector('#elVGo');
+    if (go) go.onclick = async () => { const hh = cleanE($('elV').value); if (!hh) return; if (!players[hh] || !players[hh].casas.length) { $('elMsg').style.color = 'var(--red)'; $('elMsg').textContent = 'Esse @ não tem casa no mapa: só quem mora no jogo vota.'; return; } render(hh, await dbVoted(k.ed, hh)); };
+    mc.querySelectorAll('[data-v]').forEach(b => b.onclick = async () => {
+      const [race, cand] = b.dataset.v.split('|');
+      if (cand === h) { toast('Não dá para votar em si mesmo'); return; }
+      b.disabled = true;
+      const { error } = await sb.from('vsp_votes').insert({ ed:k.ed, voter:h, race, cand });
+      if (error) { b.disabled = false; toast(/duplicate|unique/i.test(error.message || '') ? 'Você já votou neste cargo' : 'Voto não aceito (fora do horário ou @ sem casa)'); return; }
+      toast(`Voto registrado em @${cand} 🗳️`); const c2 = await dbCounts(k.ed); Object.assign(counts, c2); voted.add(race); render(h, voted);
+    });
+  };
+  render('', new Set());
+}
+// ---------- dono: aprovar candidaturas e dar posse ----------
+async function openElectionAdmin() {
+  if (!ADMIN) return;
+  const k = elecClock();
+  openModal('<h2>🗳️ Eleição · modo dono</h2><p>Carregando…</p>', true);
+  const all = await dbCands(k.ed, true), counts = await dbCounts(k.ed);
+  const pend = all.filter(c => c.status === 'pendente'), ok = all.filter(c => c.status === 'aprovada');
+  const races = [...new Set(ok.map(c => raceKey(c.office, c.scope)))];
+  const okN = race => ok.filter(c => raceKey(c.office, c.scope) === race).length;
+  const mc = $('mcard');
+  mc.innerHTML = `<button class="mx" id="mx">✕</button><h2>🗳️ Eleição · modo dono</h2><p>Edição de ${k.ed.split('-').reverse().join('/')} · ${elecLine()}</p>
+    <div class="sec"><h3>Candidaturas esperando aprovação (${pend.length})</h3>${pend.length ? `<div class="reqs">${pend.map(c => { const race = raceKey(c.office, c.scope), full = okN(race) >= OFFICES[c.office].max, why = canRun(c.handle, c.office);
+      return `<div class="req"><span><b>@${html(c.handle)}</b> · ${html(raceName(race))} · ${html(c.party)}${why ? ` <small style="color:var(--red)">⚠️ ${html(why)}</small>` : ''}${full ? ' <small style="color:var(--red)">⚠️ vagas cheias</small>' : ''}</span><span class="ra"><a class="chip" href="${igUrl(c.handle)}" target="_blank" rel="noopener">perfil</a><button class="chip y" data-ok="${c.id}" ${full ? 'disabled' : ''}>aprovar</button><button class="chip" data-no="${c.id}">recusar</button></span></div>`; }).join('')}</div>` : '<p>Nenhuma.</p>'}</div>
+    <div class="sec"><h3>Resultado e posse</h3>${races.length ? races.map(r => { const { win } = winners(r, ok, counts), emp = elected(r).filter(x => x.ed === k.ed);
+      return `<div class="req"><span><b>${html(raceName(r))}</b>: ${win.length ? win.map(w => `@${html(w.h)} (${w.n})`).join(', ') : 'sem votos'}${emp.length ? ' · 🎖️ empossado' : ''}</span><span class="ra">${win.length && k.fase === 'resultado' && !emp.length ? `<button class="chip y" data-posse="${r}">dar posse</button>` : ''}</span></div>`; }).join('') + (k.fase === 'resultado' ? `<div class="mrow"><span class="grow"></span><button class="chip y" id="posseAll">dar posse a todos os eleitos</button></div>` : '<p class="note">A posse fica liberada depois que a votação fecha (domingo 21h).</p>') : '<p>Sem candidaturas aprovadas nesta edição.</p>'}</div>`;
+  mc.querySelector('#mx').onclick = closeModal;
+  const upd = async (id, status) => { const { error } = await sb.from('vsp_cands').update({ status }).eq('id', id); if (error) toast('Não deu: ' + error.message); openElectionAdmin(); };
+  mc.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => upd(+b.dataset.ok, 'aprovada'));
+  mc.querySelectorAll('[data-no]').forEach(b => b.onclick = () => upd(+b.dataset.no, 'recusada'));
+  const posse = r => { const { win } = winners(r, ok, counts); if (!win.length) return 0; TITLES[r] = win.map(w => ({ h:w.h, party:w.party, ed:k.ed, n:w.n })); return 1; };
+  mc.querySelectorAll('[data-posse]').forEach(b => b.onclick = () => { posse(b.dataset.posse); refresh(); save(); toast('Posse dada · publique as alterações'); openElectionAdmin(); });
+  const pa = mc.querySelector('#posseAll'); if (pa) pa.onclick = () => { let n = 0; races.forEach(r => { if (!elected(r).some(x => x.ed === k.ed)) n += posse(r); }); refresh(); save(); toast(`${n} posse(s) dada(s) · publique as alterações`); openElectionAdmin(); };
+}
+{ const eb = document.createElement('button'); eb.className = 'chip y'; eb.id = 'cElec'; eb.textContent = '🗳️ eleição'; eb.onclick = openElection; $('cRank').before(eb);
+  const ad = document.createElement('button'); ad.className = 'chip'; ad.style.cssText = 'font-size:15px;padding:5px 14px'; ad.textContent = 'eleição (dono)'; ad.onclick = openElectionAdmin; $('adminRow').insertBefore(ad, $('pubBtn')); }
+setInterval(() => { const el = document.getElementById('elecEl'); if (el) el.textContent = elecLine(); }, 30000);
 
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <p>Ainda tem cidade no Brasil sem dono, e a sua pode ser uma delas. Estamos construindo um Brasil virtual (e, quem sabe, um mundo).</p>
