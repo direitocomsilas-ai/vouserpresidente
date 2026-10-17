@@ -1,0 +1,17 @@
+{
+  "name": "Vou Ser Presidente",
+  "short_name": "Vou Ser Presidente",
+  "description": "O mapa do Brasil decidido nos comentários do @vouserpresidente.",
+  "lang": "pt-BR",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#a9d8f2",
+  "theme_color": "#ffc93c",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

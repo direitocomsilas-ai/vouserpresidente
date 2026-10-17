@@ -1,4 +1,4 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Vou Ser Presidente</title>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#ffc93c"><link rel="icon" href="/icons/icon-192.png"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Vou Ser Presidente"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body><title>Vou Ser Presidente</title>
 <meta name="description" content="O mapa do Brasil decidido nos comentários do @vouserpresidente.">
 <meta property="og:title" content="Vou Ser Presidente">
 <meta property="og:description" content="Escolha seu lado e ganhe sua casa no mapa do Brasil.">
@@ -685,7 +685,8 @@ const plazaGeo = merge([
   cyl(.12, .14, .04, 14, '#d5dbe2', 0, .03, 0), cyl(.09, .09, .045, 14, '#5fc6ee', 0, .035, 0), cyl(.02, .026, .14, 6, '#d5dbe2', 0, .03, 0)
 ]);
 const SIDE_COL = { b:new THREE.Color('#2f6fec'), r:new THREE.Color('#e5484d'), n:new THREE.Color('#9aa3b2') };
-const WHITE = new THREE.Color('#ffffff'), NEUTRAL = new THREE.Color('#f4f4f4');
+const WHITE = new THREE.Color('#ffffff'), NEUTRAL = new THREE.Color('#f4f4f4'), FREE_COL = new THREE.Color('#3ad17a');
+let FREEVIEW = false; // mostrar as cidades sem dono no mapa
 const NC = cities.length;
 const HCAP = [100000, 40000, 25000, 20000, 8000, 6000, 5000, 4000, 3000, 3000, 2500, 2000, 1500, 1200, 1000];
 const FCAP = 120000, RCAP = 60000;
@@ -803,7 +804,7 @@ function rebuildAll() {
   active = [];
   for (const c of cities) {
     const tot = TOT(c);
-    { const ds = domSide(c); dotIM.setColorAt(c.i, !tot || !ds ? WHITE : SIDE_COL[ds]); }
+    { const ds = domSide(c); dotIM.setColorAt(c.i, !tot ? (FREEVIEW ? FREE_COL : WHITE) : !ds ? WHITE : SIDE_COL[ds]); }
     if (!tot) { c.list = []; c.ref = []; continue; }
     active.push(c.i);
     c.list = cityHouses(c); c.ref = []; c.fref = [];
@@ -1189,7 +1190,7 @@ function updateDots(d) {
   const r = Math.min(1.5, Math.max(.05, d * .0042)), hideActive = d < 60;
   for (const c of cities) {
     const tot = TOT(c);
-    let rr = tot ? r * (c.cap ? 1.7 : 1.35) : 0;
+    let rr = tot ? r * (c.cap ? 1.7 : 1.35) : FREEVIEW ? r * (c.cap ? 1.2 : .55) : 0;
     if (hideActive && tot) rr = 0;
     m4.compose(p4.set(c.x, TOP + .035, c.z), q4, s4.set(rr, 1, rr)); dotIM.setMatrixAt(c.i, m4);
     m4.compose(p4.set(c.x, TOP + .02, c.z), q4, s4.set(rr, 1, rr)); rimIM.setMatrixAt(c.i, m4);
@@ -1645,6 +1646,7 @@ function renderPanel() {
     </div>
     ${landmarkHtml(sel)}
     ${playersHere(sel)}
+    ${tot ? '' : `<div class="sec" style="background:#e9fbef;border:2px solid #1f9d55;border-radius:12px;padding:10px 12px"><b style="color:#1f9d55">🟢 Cidade sem dono!</b><br><span class="note" style="margin:0">O primeiro a comentar vira o <b>fundador para sempre</b>.</span></div>`}
     <p class="note">Para ganhar uma casa aqui, comente no post de @vouserpresidente "${html(c.name)}${NAME_IDX.get(c.k).length > 1 ? ' - ' + c.uf : ''} 🔵" ou "🔴" no post oficial. 1 casa por @ em cada cidade. PIB, aprovação e honestidade são de exemplo.</p>`;
   $('px').onclick = closePanel;
   el.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
@@ -2474,6 +2476,46 @@ function openCities() {
 $('cLevels').onclick = () => openModal(`<h2>Níveis da casa</h2>
   <p>Cada @ é uma casa com a bandeira do seu lado. A casa sobe de nível conforme a pontuação total do jogador (casas conquistadas + pontos). Do nível 5 em diante a casa vira prédio; os níveis mais altos ficam perto da praça e formam o centro da cidade.</p>
   <div class="lv">${LEVELS.map((L, i) => `<div>${lvImg(L.n)}<b>Nv ${L.n} · ${L.name}</b><span>${LEVELS[i + 1] ? `${L.min}–${LEVELS[i + 1].min - 1} pts` : `${L.min}+ pts`}</span></div>`).join('')}</div>`, true);
+
+// ======================= APP (PWA): instalar no celular =======================
+if ('serviceWorker' in navigator && location.protocol === 'https:') addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+let installEvt = null;
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; showInstall(); });
+function showInstall() { const b = document.getElementById('cApp'); if (b) b.hidden = isStandalone() || !(installEvt || isIOS || /android/i.test(navigator.userAgent)); }
+{ const ab = document.createElement('button'); ab.className = 'chip y'; ab.id = 'cApp'; ab.hidden = true; ab.textContent = '📲 instalar app'; $('cRank').before(ab);
+  ab.onclick = async () => {
+    if (installEvt) { installEvt.prompt(); const r = await installEvt.userChoice.catch(() => null); installEvt = null; if (r && r.outcome === 'accepted') { ab.hidden = true; toast('App instalado! 🎉'); } return; }
+    openModal(isIOS ? `<h2>📲 Instalar no iPhone</h2><p>1. Toque em <b>Compartilhar</b> (o quadrado com a seta ⬆️) no Safari.<br>2. Escolha <b>Adicionar à Tela de Início</b>.<br>3. Toque em <b>Adicionar</b>. O ícone da casinha aparece na sua tela.</p>`
+      : `<h2>📲 Instalar no celular</h2><p>No Chrome, toque nos <b>três pontinhos ⋮</b> e escolha <b>Instalar app</b> (ou <b>Adicionar à tela inicial</b>). O ícone da casinha aparece na sua tela.</p>`);
+  }; showInstall(); }
+addEventListener('appinstalled', () => { const b = document.getElementById('cApp'); if (b) b.hidden = true; });
+
+// ======================= CIDADES SEM DONO =======================
+function setFreeView(on) { FREEVIEW = on; lastDotD = -1; refresh(); const b = document.getElementById('cFree'); if (b) b.classList.toggle('y', on); }
+function openFree(uf0) {
+  const free = cities.filter(c => !TOT(c)), nFree = 5570 - (cities.length - free.length), per = {};
+  free.forEach(c => per[c.uf] = (per[c.uf] || 0) + 1);
+  const ufs = Object.keys(STATE).sort((a, b) => (per[b] || 0) - (per[a] || 0) || a.localeCompare(b));
+  const uf = uf0 || '';
+  const list = (uf ? free.filter(c => c.uf === uf) : free.filter(c => c.cap)).sort((a, b) => (b.cap - a.cap) || a.name.localeCompare(b.name));
+  openModal(`<h2>🟢 Cidades sem dono</h2>
+    <p><b>${fmt(nFree)}</b> de 5.570 cidades ainda não têm fundador. Quem comentar primeiro vira o <b>fundador para sempre</b>. Toque numa cidade para ir até ela no mapa.</p>
+    <div class="mrow"><button class="chip ${FREEVIEW ? 'y' : ''}" id="frTog">${FREEVIEW ? '✓ mostrando no mapa' : '👁️ mostrar no mapa (pontos verdes)'}</button></div>
+    <div class="sec"><h3>Por estado</h3><div class="ppl">${['', ...ufs].map(u => `<button class="pp go ${u === uf ? 'hl' : ''}" data-uf="${u}">${u ? `${u} · ${per[u] || 0}` : '⭐ capitais livres'}</button>`).join('')}</div></div>
+    <div class="sec"><h3>${uf ? `${html(STATE[uf])} · ${fmt(per[uf] || 0)} livres` : 'Capitais ainda sem dono'}</h3>
+    <div class="mob" style="margin-bottom:8px"><input id="frQ" placeholder="buscar cidade livre…" autocomplete="off"></div>
+    <div class="ppl" id="frL">${list.slice(0, 400).map(c => `<button class="pp go" data-ci="${c.i}">${c.cap ? '⭐ ' : ''}${html(c.name)}${uf ? '' : ' - ' + c.uf}</button>`).join('')}${list.length > 400 ? `<span class="note">… e mais ${fmt(list.length - 400)} (use a busca)</span>` : ''}${!list.length ? '<span class="note">Nenhuma: todas as capitais já têm dono!</span>' : ''}</div></div>`, true);
+  const mc = $('mcard');
+  mc.querySelector('#frTog').onclick = () => { setFreeView(!FREEVIEW); openFree(uf); };
+  mc.querySelectorAll('[data-uf]').forEach(b => b.onclick = () => openFree(b.dataset.uf));
+  const bind = () => mc.querySelectorAll('[data-ci]').forEach(b => b.onclick = () => { closeModal(); if (!FREEVIEW) setFreeView(true); select(+b.dataset.ci); });
+  bind();
+  mc.querySelector('#frQ').oninput = e => { const k2 = key(e.target.value); if (k2.length < 2) return; const L = free.filter(c => c.k.includes(k2) && (!uf || c.uf === uf)).slice(0, 80);
+    mc.querySelector('#frL').innerHTML = L.map(c => `<button class="pp go" data-ci="${c.i}">${c.cap ? '⭐ ' : ''}${html(c.name)} - ${c.uf}</button>`).join('') || '<span class="note">Nenhuma cidade livre com esse nome.</span>'; bind(); };
+}
+{ const fb = document.createElement('button'); fb.className = 'chip'; fb.id = 'cFree'; fb.textContent = '🟢 cidades sem dono'; fb.onclick = () => openFree(); $('cRank').after(fb); }
 
 // ======================= ELEIÇÕES SEMANAIS =======================
 // Sábado 12h–19h: candidaturas (o dono aprova) · Sábado 19h: lista de candidatos · Votação até domingo 21h
