@@ -1287,7 +1287,8 @@ function updateDots(d) {
   if (wantShadow !== shadowsOn) { shadowsOn = wantShadow; HM.forEach(m => m.castShadow = wantShadow); plazaIM.castShadow = poleIM.castShadow = cflagIM.castShadow = treeIM.castShadow = wantShadow; }
   if (lastDotD > 0 && Math.abs(d - lastDotD) / lastDotD < .04) return;
   lastDotD = d;
-  const r = Math.min(1.5, Math.max(.05, d * .0042)), hideActive = d < 60;
+  // bolinhas só na visão do Brasil/região; aproximando, some a bolinha e fica a cidade de verdade
+  const r = Math.min(3, Math.max(.05, d * .0042)), hideActive = d < 150;
   for (const c of cities) {
     const tot = TOT(c);
     let rr = tot ? r * (c.cap ? 1.7 : 1.35) : FREEVIEW ? r * (c.cap ? 1.2 : .55) : 0;
@@ -1360,7 +1361,7 @@ canvas.addEventListener('pointerdown', e => { down = { x:e.clientX, y:e.clientY 
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 let picked = null; // casa escolhida: { ci, h }
 function pickHouse(mx, my, w, h) {
-  if (curDist() > 70) return null;
+  if (curDist() > 150) return null;
   ndc.set(mx / w * 2 - 1, -(my / h) * 2 + 1); ray.setFromCamera(ndc, camera);
   const hit = ray.intersectObjects(HM.filter(m => m.count), false)[0];
   if (!hit || hit.instanceId === undefined) return null;
@@ -1554,7 +1555,7 @@ function loop(t) {
   if (dirty) { HM.forEach(m => m.instanceMatrix.needsUpdate = true); flagIM.instanceMatrix.needsUpdate = true; }
   if (!RM) clouds.forEach((g, i) => { g.position.x += .01 + i * .0015; if (g.position.x > minX + span + 15) g.position.x = minX - 15; });
   updateTraffic(t, d);
-  drawLabels(d); drawHouseLabel(); drawFanLabels(d); drawStateTags(); drawBizTags(d);
+  drawLabels(d); drawHouseLabel(); drawFanLabels(d); drawStateTags(); drawBizTags(d); drawMissions(d);
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
@@ -1572,19 +1573,22 @@ function setText(el, n, k, f) {
 }
 const marcoTxt = c => { if (hasNamedLm(c.i) || c.i === BSB || !TOT(c)) return ''; const m = marcoInfo(c); return m.done ? '' : `🏗️ ${m.name} · ${m.pct}%`; };
 function drawLabels(d) {
-  const w = canvas.clientWidth, h = canvas.clientHeight, near = d < 45;
+  // longe: siglas dos estados (+ 👑 líder) · meio: só o nome das cidades, sem amontoar · perto: nome, obra e fundador
+  const w = canvas.clientWidth, h = canvas.clientHeight, near = d < 150, full = d < 45, boxes = [];
+  const free = (el, prio) => { if (el.hidden) return; const x = parseFloat(el.style.left), y = parseFloat(el.style.top) - (el.offsetHeight || 20) / 2, bw = (el.offsetWidth || 96) + 4, bh = (el.offsetHeight || 20) + 2;
+    if (!prio && boxes.some(b => Math.abs(b[0] - x) < (bw + b[2]) / 2 && Math.abs(b[1] - y) < (bh + b[3]) / 2)) { el.hidden = true; return; } boxes.push([x, y, bw, bh]); };
   capLabs.forEach(el => {
     const c = cities[el.ci], kg = kings[c.uf], made = TOT(c) > 0, isSel = el.ci === sel;
     if (near && !made && !isSel) { el.hidden = true; return; }
-    setText(el, near || isSel ? c.name : c.uf, !near && kg ? '👑 ' + showH(kg.h) : (near || isSel) && made ? marcoTxt(c) : '', (near || isSel) && made ? founderHTML(c) : '');
-    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .7 : .8);
+    setText(el, near || isSel ? c.name : c.uf, !near && kg ? '👑 ' + showH(kg.h) : (full || isSel) && made ? marcoTxt(c) : '', (full || isSel) && made ? founderHTML(c) : '');
+    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .7 : .8); if (near) free(el, isSel);
   });
   if (frameN++ % 10 === 0) {
     poolCities = [];
     if (sel >= 0 && !cities[sel].cap) poolCities.push(sel);
     if (near) {
       const t = controls.target, R = d * .9;
-      active.filter(ci => !cities[ci].cap && ci !== sel).map(ci => [ci, Math.hypot(cities[ci].x - t.x, cities[ci].z - t.z)])
+      active.filter(ci => !cities[ci].cap && ci !== sel).map(ci => [ci, Math.hypot(cities[ci].x - t.x, cities[ci].z - t.z) - TOT(cities[ci]) * .02])
         .filter(([, dd]) => dd < R).sort((a, b) => a[1] - b[1]).slice(0, pool.length - poolCities.length).forEach(([ci]) => poolCities.push(ci));
     }
   }
@@ -1592,8 +1596,8 @@ function drawLabels(d) {
     const ci = poolCities[k];
     if (ci === undefined) { el.hidden = true; el.ci = -1; return; }
     const c = cities[ci]; el.ci = ci;
-    setText(el, c.name, near || ci === sel ? marcoTxt(c) : '', near || ci === sel ? founderHTML(c) : '');
-    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .6 : .8);
+    setText(el, c.name, full || ci === sel ? marcoTxt(c) : '', full || ci === sel ? founderHTML(c) : '');
+    placeLabel(el, c, w, h, near ? (c.rad || 2) * CELL * .9 + .6 : .8); free(el, ci === sel);
   });
 }
 
@@ -2899,6 +2903,7 @@ async function castCommentVotes(L) {
   toast(`🗳️ ${ok} voto(s) dos comentários na urna`);
 }
 // fogos de artifício para quem ganhou
+window.__fireworks = (...a) => fireworks(...a); // usado nos vídeos
 function fireworks(ms = 6500) {
   // fogos de felicidade: foguetes com rastro que sobem e explodem em anéis, chuva de brilho e confete
   const cv = document.createElement('canvas'); cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:20';
@@ -3036,11 +3041,12 @@ async function openConta_() {
         <button class="act" id="aAli" style="background:#fff"><span>🤝 Convidar aliado</span><small>+3 por amigo</small></button>
         <button class="act" id="aRank" style="background:#fff"><span>🏆 Ranking</span><small>${rk ? '#' + rk[0] : ''}</small></button>
         <button class="act" data-biz="1" style="background:#fff"><span>🏪 Meu negócio</span><small>no mapa</small></button>
+        <button class="act" id="aMiss" style="background:#fff"><span>💸 Missões</span><small>caçar no mapa</small></button>
       </div>
       <div class="mrow" style="margin-top:8px"><button class="chip" id="acOut">sair da conta</button><span class="note" style="margin:0">Você fica conectado neste aparelho.</span></div>`;
   };
   $('mcard').innerHTML = `<button class="mx" id="mx" aria-label="Fechar">✕</button><h2>👤 Minha conta</h2>
-    <div class="ac-hd"><span class="av" style="background:${p.side === 'b' ? 'var(--blue)' : p.side === 'r' ? 'var(--red)' : '#c9ced8'}">🏠</span><span style="flex:1;min-width:0"><b>@${html(ME)} ${ptag(meuP)}</b><small>${html(c.name)} - ${c.uf} · Nv ${levelOf(p)} · ${fmt(scoreOf(p))} pts · ${side}${meuP ? ' · ' + html(meuP.nome) : ''}</small></span></div>
+    <div class="ac-hd"><span class="av" style="background:${p.side === 'b' ? 'var(--blue)' : p.side === 'r' ? 'var(--red)' : '#c9ced8'}">🏠</span><span style="flex:1;min-width:0"><b>@${html(ME)} ${ptag(meuP)}</b><small>${html(c.name)} - ${c.uf} · Nv ${levelOf(p)} · ${fmt(scoreOf(p))} pts · ${side}${meuP ? ' · ' + html(meuP.nome) : ''}</small><small style="color:#1f9d55;font-size:14px">💸 Saldo: <b>${brl((SALDO.get(ME) || { v:0 }).v)}</b></small></span></div>
     ${painel()}
     ${ok ? '' : '<p class="el-msg" style="color:var(--red)">A área de apoio está sendo ativada. Volte daqui a pouco!</p>'}
     <div class="sec"><h3>🤝 Pedir apoio</h3><div class="el-f"><div style="position:relative"><input id="apH" placeholder="digite o @ de quem você quer apoio" autocomplete="off" autocapitalize="none" style="width:100%;box-sizing:border-box"><div class="ap-sug" id="apSug" hidden></div></div><input id="apM" maxlength="140" placeholder="mensagem (opcional): ex. me apoia para prefeito!"><button class="chip y" id="apGo">pedir apoio</button></div><div class="el-msg" id="apMsg"></div>
@@ -3060,7 +3066,7 @@ async function openConta_() {
   $('aPerf').onclick = () => openProfile(ME);
   $('aFol').onclick = () => openFollow();
   $('aAli').onclick = () => openJoin('aliado', { city:ctag(ci) });
-  $('aRank').onclick = () => openRanking();
+  $('aRank').onclick = () => openRanking(); $('aMiss').onclick = () => openMissoes();
   // sugestões: quem tem casa no jogo e ainda não apoia ninguém (e você ainda não pediu)
   const pedidos = new Set(env.map(x => x.to_h));
   const sugL = () => { const q = cleanE($('apH').value);
@@ -3333,6 +3339,91 @@ document.head.appendChild(bzCss);
 window.__bizReady = true; window.__biz = () => [BIZ.length, BIZ_OK, shopIM.count];
 window.__bizSet = L => { BIZ = L; bizBy.clear(); BIZ.forEach(b => { if (!bizBy.has(b.ci)) bizBy.set(b.ci, []); bizBy.get(b.ci).push(b); }); updateShops(); }; // testes e vídeos
 if (!window.__STATE) { loadBiz(); setInterval(loadBiz, 180000); }
+
+// ======================= MODO DINHEIRO: MISSÕES NO MAPA + SALDO EM R$ =======================
+// a página espalha missões (💰) pelo mapa; quem tem casa e está logado clica e captura: o valor vai para o saldo daquele @ e a missão some para sempre
+const brl = v => (+v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+let MISS = [], SALDO = new Map(), MISS_OK = true;
+async function loadMiss() {
+  if (!sb) return;
+  const [a, b] = await Promise.all([sb.from('vsp_missoes').select('id,ci,dx,dz,valor,titulo').is('capturada_por', null).order('id').limit(2000), sb.rpc('vsp_saldos')]);
+  MISS_OK = !a.error; MISS = a.error ? [] : a.data || [];
+  if (!b.error) { SALDO = new Map(); (b.data || []).forEach(r => SALDO.set(r.handle, { v:+r.saldo, n:+r.n })); }
+  updateMissChip(); if (typeof contaBadge === 'function') contaBadge();
+}
+const missPos = m => { const c = cities[m.ci]; return c ? [c.x + (+m.dx || 0), c.z + (+m.dz || 0)] : null; };
+const missTags = [];
+function drawMissions(d) {
+  const r = canvas.getBoundingClientRect(); let k = 0;
+  if (MISS.length && d < 260) {
+    const t = controls.target, R = d * 1.4;
+    for (const m of MISS) { if (k >= 40) break; const p = missPos(m); if (!p || Math.abs(p[0] - t.x) > R || Math.abs(p[1] - t.z) > R) continue;
+      v3.set(p[0], TOP + .25, p[1]).project(camera); if (v3.z > 1 || Math.abs(v3.x) > 1.05 || Math.abs(v3.y) > 1.05) continue;
+      let e = missTags[k]; if (!e) { e = document.createElement('button'); e.className = 'misstag'; $('labels').appendChild(e); missTags.push(e); }
+      const txt = '💰 ' + brl(m.valor); if (e.textContent !== txt) e.textContent = txt;
+      e.style.left = ((v3.x + 1) / 2 * r.width) + 'px'; e.style.top = ((1 - v3.y) / 2 * r.height) + 'px'; e.hidden = false; e.dataset.id = m.id; k++; } }
+  for (let i = k; i < missTags.length; i++) missTags[i].hidden = true;
+}
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('.misstag'); if (b) { e.stopPropagation(); capturar(+b.dataset.id); } }, true);
+async function capturar(id) {
+  const m = MISS.find(x => x.id === id); if (!m) return;
+  if (!logged()) { openModal(`<h2>💰 Missão de ${brl(m.valor)}!</h2><p>Você encontrou uma missão${m.titulo ? `: <b>${html(m.titulo)}</b>` : ''}. Para capturar e levar o valor para o seu saldo, entre na sua conta (precisa ter casa no mapa).</p>${loginGate('capturar missões')}`); bindGate(() => capturar(id)); return; }
+  if (!sb) return toast('Sem conexão agora.');
+  const { data, error } = await sb.rpc('vsp_capturar', { p_id:id, p_h:ME });
+  if (error) { toast(/function|does not exist|schema cache/i.test(error.message || '') ? 'O modo dinheiro está sendo ativado. Volte já já!' : 'Não deu agora, tente de novo.'); return; }
+  if (!String(data).startsWith('ok')) { toast(String(data)); if (/primeiro/.test(data)) { MISS = MISS.filter(x => x.id !== id); updateMissChip(); } return; }
+  const v = +String(data).split(':')[1]; MISS = MISS.filter(x => x.id !== id);
+  const s = SALDO.get(ME) || { v:0, n:0 }; s.v += v; s.n++; SALDO.set(ME, s); updateMissChip(); contaBadge();
+  fireworks(4500);
+  openModal(`<h2>💸 Missão capturada!</h2><div class="gv-top"><span class="pi">💰</span><span><small>VOCÊ GANHOU</small><b>${brl(v)}</b><small>Saldo de @${html(ME)}: <b>${brl(s.v)}</b></small></span></div><p style="margin-top:10px">A missão sumiu do mapa: só você ficou com ela. Continue explorando: tem mais 💰 escondido pelo Brasil!</p>`);
+}
+// chip com o total de missões
+const missChip = document.createElement('button'); missChip.className = 'chip y'; missChip.id = 'cMiss'; missChip.onclick = () => openMissoes();
+document.querySelector('#bottom .chips').prepend(missChip);
+function updateMissChip() { const tot = MISS.reduce((a, m) => a + +m.valor, 0); missChip.hidden = !MISS.length && !SALDO.size; missChip.textContent = MISS.length ? `💸 ${MISS.length} missões · ${brl(tot)}` : '💸 missões'; }
+function openMissoes() {
+  const tot = MISS.reduce((a, m) => a + +m.valor, 0), me = logged() ? SALDO.get(ME) : null, top = [...SALDO.entries()].sort((a, b) => b[1].v - a[1].v).slice(0, 10);
+  const byUf = {}; MISS.forEach(m => { const c = cities[m.ci]; if (c) byUf[c.uf] = (byUf[c.uf] || 0) + 1; });
+  openModal(`<h2>💸 Modo dinheiro</h2>
+    <div class="gv-top"><span class="pi">💰</span><span><small>NO MAPA AGORA</small><b>${MISS.length} missões · ${brl(tot)}</b><small>${logged() ? `Seu saldo (@${html(ME)}): <b>${brl(me ? me.v : 0)}</b>` : 'Entre na sua conta para capturar.'}</small></span></div>
+    <ul class="rules" style="margin-top:10px"><li><b>🔎</b><span>Explore o mapa: as missões aparecem como <b>💰 R$</b> quando você aproxima o zoom.</span></li><li><b>👆</b><span>Toque nela para <b>capturar</b>: o valor vai para o seu saldo e ela some do mapa para sempre. Só uma pessoa leva cada missão.</span></li><li><b>🏠</b><span>Precisa ter casa no jogo e estar logado na sua conta.</span></li></ul>
+    ${Object.keys(byUf).length ? `<div class="sec"><h3>Onde procurar</h3><div class="ppl">${Object.entries(byUf).sort((a, b) => b[1] - a[1]).map(([u, n]) => `<button class="pp go" data-uf="${u}">${u} · ${n} 💰</button>`).join('')}</div></div>` : ''}
+    <div class="sec"><h3>🏆 Maiores saldos</h3>${top.length ? top.map(([h, s], i) => `<div class="gv-r"><span>${i + 1}º <a data-pf="${html(h)}">@${html(h)}</a></span><b>${brl(s.v)}</b> <small style="color:var(--muted)">· ${s.n} missões</small></div>`).join('') : '<p class="note">Ninguém capturou ainda. Seja o primeiro!</p>'}</div>
+    ${MISS_OK ? '' : '<p class="note">O modo dinheiro está sendo ativado.</p>'}`);
+  const mc = $('mcard');
+  mc.querySelectorAll('[data-uf]').forEach(b => b.onclick = () => { closeModal(); highlightState(b.dataset.uf); });
+  mc.querySelectorAll('[data-pf]').forEach(a => a.onclick = () => openProfile(a.dataset.pf));
+}
+// dono: criar e apagar missões
+async function openMissAdmin() {
+  if (!ADMIN || !sb) return;
+  const { data } = await sb.from('vsp_missoes').select('id,ci,valor,titulo,capturada_por,capturada_em').order('id', { ascending:false }).limit(200);
+  const L = data || [];
+  openModal(`<h2>💸 Missões · modo dono</h2>
+    <div class="el-f"><input id="msQ" type="number" min="1" max="50" value="5" placeholder="quantas missões"><input id="msV" type="number" min="0.01" step="0.01" value="5" placeholder="valor de cada uma (R$)">
+    <input id="msC" placeholder="cidade (vazio = sortear entre cidades com casa)"><input id="msT" maxlength="40" placeholder="título (opcional, ex.: Tesouro do Nordeste)">
+    <button class="chip y" id="msGo">espalhar missões no mapa</button></div><div class="el-msg" id="msMsg"></div>
+    <div class="sec"><h3>Últimas missões</h3>${L.map(m => `<div class="gv-r"><span>${brl(m.valor)} · ${cities[m.ci] ? html(cities[m.ci].name) + '-' + cities[m.ci].uf : '?'}</span>${m.capturada_por ? `<b>✅ @${html(m.capturada_por)}</b>` : `<small style="color:var(--muted)">no mapa</small> <button class="chip" style="font-size:12px;padding:2px 10px" data-del="${m.id}">apagar</button>`}</div>`).join('') || '<p class="note">Nenhuma ainda.</p>'}</div>`, true);
+  $('msGo').onclick = async () => {
+    const n = Math.max(1, Math.min(50, +$('msQ').value || 1)), v = Math.max(.01, Math.round((+$('msV').value || 0) * 100) / 100), cq = $('msC').value.trim(), t = $('msT').value.trim() || null, m2 = $('msMsg');
+    let pool;
+    if (cq) { const mm = matchCity(cq); if (!mm || mm.amb) return accMsg(m2, 0, 'Cidade não encontrada (use "Cidade UF").'); pool = [mm.ci]; }
+    else pool = active.slice();
+    if (!pool.length) return accMsg(m2, 0, 'Nenhuma cidade com casa ainda.');
+    const rows = Array.from({ length:n }, () => { const ci = pool[Math.floor(Math.random() * pool.length)], a = Math.random() * 6.283, rr = 1.2 + Math.random() * 2.2; return { ci, dx:+(Math.cos(a) * rr).toFixed(2), dz:+(Math.sin(a) * rr).toFixed(2), valor:v, titulo:t }; });
+    const { error } = await sb.from('vsp_missoes').insert(rows);
+    if (error) return accMsg(m2, 0, /relation|does not exist|schema cache/i.test(error.message || '') ? 'Rode o SQL de ativação no Supabase primeiro.' : 'Erro: ' + error.message);
+    await loadMiss(); openMissAdmin(); toast(`💸 ${n} missões espalhadas!`);
+  };
+  $('mcard').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { await sb.from('vsp_missoes').delete().eq('id', +b.dataset.del); await loadMiss(); openMissAdmin(); });
+}
+{ const ab = document.createElement('button'); ab.className = 'chip'; ab.style.cssText = 'font-size:15px;padding:5px 14px'; ab.textContent = '💸 missões'; ab.onclick = openMissAdmin; $('adminRow').appendChild(ab); }
+const msCss = document.createElement('style');
+msCss.textContent = `.misstag{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;z-index:4;border:3px solid var(--ink);border-radius:99px;background:linear-gradient(180deg,#ffe27a,#ffc93c);padding:4px 11px;font:900 14px var(--body);color:var(--ink);box-shadow:0 4px 0 var(--ink),0 0 14px rgba(255,201,60,.9);white-space:nowrap;animation:msBob 1.4s ease-in-out infinite}
+.misstag:active{transform:translate(-50%,-100%) scale(.94)}@keyframes msBob{0%,100%{margin-top:0}50%{margin-top:-7px}}`;
+document.head.appendChild(msCss);
+updateMissChip();
+if (!window.__STATE) { loadMiss(); setInterval(loadMiss, 45000); }
 
 // ======================= INTERFACE LIMPA (mapa em primeiro lugar) =======================
 const uiCss = document.createElement('style');
