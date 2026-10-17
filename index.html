@@ -2364,10 +2364,15 @@ function applySupport(from, to, k = 'pres', ci) {
 }
 function openSupport(h) {
   const names = Object.keys(players).filter(x => x !== h).sort();
+  if (!ADMIN && !logged()) {
+    openModal(`<h2>Apoiar ${html(showH(h))}</h2><p>Cada apoio vale <b>+5 pontos</b> para ${html(showH(h))} e conta como voto no cargo escolhido.</p>${loginGate('apoiar alguém')}<p class="note">Para apoiar, você precisa ter <b>casa no jogo</b> e estar logado na sua conta: assim ninguém apoia em nome de outra pessoa.</p>`);
+    bindGate(() => openSupport(h)); return;
+  }
+  if (!ADMIN && ME === h) { toast('Você não pode apoiar a si mesmo'); return; }
   openModal(`<h2>Apoiar ${html(showH(h))}</h2>
     <p>Cada apoio vale <b>+5 pontos</b> para ${html(showH(h))} e conta como voto no cargo escolhido.</p>
-    <label style="display:block;font-weight:900;font-size:14px;margin-top:6px">Coloque seu @ aqui</label>
-    <input id="supMe" list="supList" placeholder="@seu.instagram" autocomplete="off" style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 16px var(--body);margin-top:4px">
+    ${ADMIN ? `<label style="display:block;font-weight:900;font-size:14px;margin-top:6px">@ de quem está apoiando (modo dono)</label>
+    <input id="supMe" list="supList" placeholder="@seu.instagram" autocomplete="off" style="width:100%;box-sizing:border-box;border:2px solid var(--ink);border-radius:12px;padding:10px;font:800 16px var(--body);margin-top:4px">` : `<div class="el-me">👤 Apoiando como <b>@${html(ME)}</b></div><input id="supMe" type="hidden" value="${html(ME)}">`}
     <datalist id="supList">${names.map(n => `<option value="@${html(n)}">`).join('')}</datalist>
     <div class="sec"><h3>Apoiar para</h3><div class="acts" id="supOpts"></div></div>
     <p class="note" id="supMsg">Presidente: qualquer pessoa pode apoiar. Governador: só quem mora no mesmo estado. Prefeito: só quem mora na mesma cidade.</p>`);
@@ -2386,11 +2391,12 @@ function openSupport(h) {
   const send = async me => {
     if (!pick) return;
     if (ADMIN) { const r = applySupport(me, h, pick.k, pick.ci); if (r !== 'ok') { $('supMsg').textContent = r; return; } refresh(); save(); closeModal(); toast('Apoio registrado: +5 pontos'); return; }
+    if (!logged() || me !== ME) { $('supMsg').textContent = 'Entre na sua conta para apoiar.'; return; }
     const r = await sendRequest({ handle:me, kind:'apoio', target:h, office:pick.k, ci:pick.k === 'pref' ? pick.ci : null });
     if (r === 'ok') { closeModal(); toast('Apoio enviado! Entra quando a página confirmar ✓'); }
     else $('supMsg').textContent = r;
   };
-  $('supMe').oninput = draw; draw(); $('supMe').focus();
+  $('supMe').oninput = draw; draw(); if (ADMIN) $('supMe').focus();
 }
 // pedidos dos visitantes (apoio, seguiu, story) vão para a fila do dono no banco
 async function sendRequest(row) {
@@ -2652,7 +2658,7 @@ function canVote(h, race) {
   return S === 'BR' || (S === 'uf' ? homeUf(p) === sc : p.casas.includes(+sc));
 }
 // relógio de Brasília (UTC-3) e fases
-const brNow = () => new Date(Date.now() - 3 * 3600e3);
+const brNow = () => new Date(Date.now() + (window.__VSP_DT || 0) - 3 * 3600e3); // __VSP_DT: só para testes
 function elecClock() {
   const n = brNow(), dow = n.getUTCDay(), h = n.getUTCHours() + n.getUTCMinutes() / 60;
   const fase = dow === 6 && h >= 12 && h < 19 ? 'candidaturas' : (dow === 6 && h >= 19) || (dow === 0 && h < 21) ? 'votacao' : 'resultado';
@@ -2693,12 +2699,41 @@ eCss.textContent = `.el-ph{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px
 .el-c{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-weight:800;font-size:14px}.el-c .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.el-c small{color:var(--muted);font-weight:800}
 .el-c .vt{font-family:var(--display);font-size:18px;min-width:34px;text-align:right}.el-c .chip{font-size:14px;padding:3px 12px;box-shadow:0 2px 0 var(--ink)}.el-c.win{background:#fff4cf;border-radius:10px;padding:6px 8px}
 .el-f{display:grid;gap:8px;margin-top:8px}.el-f input,.el-f select{border:2px solid var(--ink);border-radius:12px;padding:9px 12px;font:800 15px var(--body);background:#fff}.el-msg{font-weight:800;font-size:13px;margin-top:6px}
+.el-me{border:2px solid var(--ink);border-radius:12px;padding:8px 12px;font-weight:800;font-size:14px;background:#fff8dd;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.el-lock{border:3px dashed var(--ink);border-radius:14px;padding:12px;text-align:center;font-weight:800;font-size:14px;background:#fff8dd;line-height:1.5}
+.el-c.pick{background:#fff4cf;border-radius:10px;padding:6px 8px}.el-c .plink{cursor:pointer;text-decoration:underline;text-decoration-thickness:1px}
 #board .elec{display:block;width:100%;text-align:left;font:900 11.5px var(--body);background:var(--sun);border:2px solid var(--ink);border-radius:10px;padding:5px 8px;margin-bottom:8px;cursor:pointer}`;
 document.head.appendChild(eCss);
 function elecHead(k) {
   const ph = [['candidaturas', 'Sáb 12h–19h · candidaturas'], ['votacao', 'Sáb 19h–Dom 21h · votação'], ['resultado', 'Dom 21h · resultado e posse']];
   return `<h2>🗳️ Eleição da semana</h2><div class="el-ph">${ph.map(([f, t]) => `<span class="${k.fase === f ? 'on' : ''}">${t}</span>`).join('')}</div>
   <p>${elecLine()}. Cada @ pode se candidatar a <b>um</b> cargo por eleição e tem <b>1 voto em cada cargo</b>. Para presidente, a casa precisa ser nível ${PRES_MIN_LV}+. Quem ganha recebe o título quando a página confirma a posse.</p>`;
+}
+function loginGate(what) {
+  return `<div class="sec"><div class="el-lock">🔒 <b>Só quem está logado pode ${what}.</b><br>Entre na sua conta com o seu @ (precisa ter casa no mapa).<div class="mrow" style="justify-content:center"><button class="chip y" id="elLogin">👤 entrar na minha conta</button></div></div></div>`;
+}
+function bindGate(cb) { const b = document.getElementById('elLogin'); if (b) b.onclick = () => { AFTER_LOGIN = cb || openElection; openAcctLogin(); }; }
+// lista de candidatos aprovados, com filtro (minha cidade / meu estado / Brasil / todos)
+let CFILT = 'meus';
+async function candSection(k, withVotes) {
+  const cands = await dbCands(k.ed); CAND_CACHE = cands;
+  return `<div class="sec" id="cSec">${candInner(cands)}</div>`;
+}
+let CAND_CACHE = [];
+function candInner(cands) {
+  const me = logged() ? ME : '', races = [...new Set(cands.map(c => raceKey(c.office, c.scope)))].sort((a, b) => OFF_ORDER.indexOf(a.split(':')[0]) - OFF_ORDER.indexOf(b.split(':')[0]) || a.localeCompare(b));
+  const pick = races.filter(r => CFILT === 'todos' ? true : CFILT === 'br' ? r.startsWith('pres:') : !me ? true : canVote(me, r));
+  const f = (id, t) => `<button class="pp go ${CFILT === id ? 'hl' : ''}" data-cf="${id}">${t}</button>`;
+  return `<h3>👀 Candidatos ${k_label()}</h3><div class="ppl" style="margin-bottom:6px">${me ? f('meus', '📍 onde eu voto') : ''}${f('br', '🇧🇷 presidente')}${f('todos', '🗺️ todos')}</div>
+    ${pick.length ? pick.slice(0, 60).map(r => `<div class="el-race"><h4>${OFFICES[r.split(':')[0]].ic} ${html(raceName(r))}</h4>${cands.filter(c => raceKey(c.office, c.scope) === r).map(c => { const pl = players[c.handle], ci = pl ? pl.casas[0] : null;
+      return `<div class="el-c"><span class="dot ${c.side || 'n'}"></span><span class="nm"><a class="plink" data-pf="${html(c.handle)}">@${html(c.handle)}</a> <small>· ${html(c.party)}${pl ? ' · Nv ' + levelOf(pl) : ''}${ci != null ? ' · ' + html(cities[ci].name) + '-' + cities[ci].uf : ''}</small></span></div>`; }).join('')}</div>`).join('')
+      : `<p class="note">${cands.length ? 'Nenhum candidato aprovado neste filtro ainda.' : 'Nenhuma candidatura aprovada ainda. A lista completa sai sábado às 19h.'}</p>`}`;
+}
+const k_label = () => { const k = elecClock(); return k.fase === 'candidaturas' ? '<small style="text-transform:none;letter-spacing:0">(aprovados até agora · lista final às 19h)</small>' : ''; };
+function bindCands() {
+  const sec = document.getElementById('cSec'); if (!sec) return;
+  sec.querySelectorAll('[data-cf]').forEach(b => b.onclick = () => { CFILT = b.dataset.cf; sec.innerHTML = candInner(CAND_CACHE); bindCands(); });
+  sec.querySelectorAll('[data-pf]').forEach(a => a.onclick = () => openProfile(a.dataset.pf));
 }
 async function openElection() { try { return await openElection_(); } catch (e) { console.error("ELEC", e && e.stack); } }
 async function openElection_() {
@@ -2707,14 +2742,17 @@ async function openElection_() {
   const mc = $('mcard'), head = () => `<button class="mx" id="mx" aria-label="Fechar">✕</button>` + elecHead(k);
   const bindX = () => { const x = mc.querySelector('#mx'); if (x) x.onclick = closeModal; };
   if (k.fase === 'candidaturas') {
+    if (!logged()) { mc.innerHTML = head() + loginGate('se candidatar') + await candSection(k, false); bindX(); bindGate(); bindCands(); return; }
     mc.innerHTML = head() + `<div class="sec"><h3>Quero me candidatar</h3>
-      <div class="el-f"><input id="elH" placeholder="Coloque seu @ aqui" autocomplete="off">
+      <div class="el-f"><div class="el-me">👤 Candidato(a): <b>@${html(ME)}</b> <button class="chip" id="elSw" style="font-size:12px;padding:2px 10px;box-shadow:none">trocar conta</button></div><input id="elH" type="hidden" value="${html(ME)}">
       <select id="elO">${OFF_ORDER.map(o => `<option value="${o}">${OFFICES[o].ic} ${OFFICES[o].n}</option>`).join('')}</select>
       <select id="elP"><option value="">Escolha seu partido</option>${PARTIDOS.length ? `<optgroup label="Partidos dos jogadores">${PARTIDOS.map(P => `<option>${html(partyLabel(P))}</option>`).join('')}</optgroup><optgroup label="Partidos do jogo">` : ''}${PARTIES.map(p => `<option>${p}</option>`).join('')}${PARTIDOS.length ? '</optgroup>' : ''}</select>
       <button class="chip y" id="elGo">enviar candidatura</button></div><div class="el-msg" id="elMsg"></div>
       <p class="note">Os partidos são do jogo (fictícios). A página confere e aprova as candidaturas; a lista sai sábado às 19h. Vagas por cargo: presidente ${OFFICES.pres.max}, governador ${OFFICES.gov.max}, senador ${OFFICES.sen.max}, deputado ${OFFICES.dep.max} por estado, prefeito ${OFFICES.pref.max} e vereador ${OFFICES.ver.max} por cidade.</p></div>`;
-    bindX();
-    if (ME) { $('elH').value = ME; const mp = partyOf(ME); if (mp) $('elP').value = partyLabel(mp); }
+    const cs = await candSection(k, false); if (!mc.querySelector('#elGo')) return; mc.insertAdjacentHTML('beforeend', cs); bindX(); bindCands();
+    $('elSw').onclick = () => { AFTER_LOGIN = openElection; openAcctLogin(); };
+    { const mp = partyOf(ME); if (mp) $('elP').value = partyLabel(mp); }
+    setTimeout(() => { const o = $('elO'); if (o) o.dispatchEvent(new Event('change')); }, 0);
     const info = () => { const h = cleanE($('elH').value), o = $('elO').value; if (!h) { $('elMsg').textContent = ''; return; } const why = canRun(h, o); const sc = raceScope(h, o); $('elMsg').textContent = why || `Você vai concorrer a ${raceName(raceKey(o, sc))}.`; $('elMsg').style.color = why ? 'var(--red)' : '#1f9d55'; };
     $('elH').oninput = info; $('elO').onchange = info;
     $('elGo').onclick = async () => {
@@ -2736,18 +2774,20 @@ async function openElection_() {
   const cands = await dbCands(k.ed), counts = await dbCounts(k.ed);
   const races = [...new Set(cands.map(c => raceKey(c.office, c.scope)))].sort((a, b) => OFF_ORDER.indexOf(a.split(':')[0]) - OFF_ORDER.indexOf(b.split(':')[0]) || a.localeCompare(b));
   const raceHTML = (race, voteable, voted, me) => { const { list, win } = winners(race, cands, counts), done = k.fase === 'resultado', ws = new Set(win.map(x => x.h)), emp = new Set(elected(race).filter(x => x.ed === k.ed).map(x => x.h));
-    return `<div class="el-race"><h4>${OFFICES[race.split(':')[0]].ic} ${html(raceName(race))}</h4>${list.map(c => `<div class="el-c ${done && ws.has(c.h) ? 'win' : ''}"><span class="dot ${c.side || 'n'}"></span><span class="nm">@${html(c.h)} <small>· ${html(c.party)}</small></span><span class="vt">${c.n}</span>${
-      done ? (ws.has(c.h) ? `<small>${emp.has(c.h) ? '🎖️ empossado' : '🏆 eleito · aguardando posse'}</small>` : '') : voteable ? (voted || c.h === me ? "" : `<button class="chip y" data-v="${race}|${c.h}">votar</button>`) : ''}</div>`).join('')}${voted && !done ? '<p class="note" style="margin:6px 0 0">✓ seu voto neste cargo já foi registrado</p>' : ''}</div>`; };
+    return `<div class="el-race"><h4>${OFFICES[race.split(':')[0]].ic} ${html(raceName(race))}</h4>${list.map(c => `<div class="el-c ${done && ws.has(c.h) ? 'win' : ''}"><span class="dot ${c.side || 'n'}"></span><span class="nm"><a class="plink" data-pf="${html(c.h)}">@${html(c.h)}</a> <small>· ${html(c.party)}${players[c.h] ? ' · Nv ' + levelOf(players[c.h]) : ''}</small></span><span class="vt">${c.n}</span>${
+      done ? (ws.has(c.h) ? `<small>${emp.has(c.h) ? '🎖️ empossado' : '🏆 eleito · aguardando posse'}</small>` : '') : voteable ? (voted ? '' : c.h === me ? '<small>você</small>' : `<button class="chip y" data-v="${race}|${c.h}">escolher</button>`) : ''}</div>`).join('')}${voted && !done ? '<p class="note" style="margin:6px 0 0">✓ seu voto neste cargo já foi registrado</p>' : ''}</div>`; };
   const render = (h, voted) => {
     const mine = h && players[h] ? races.filter(r => canVote(h, r)) : [];
     const rest = races.filter(r => !mine.includes(r));
     let body = '';
-    if (k.fase === 'resultado' && races.length) body += `<div class="sec"><h3>Ver quem ganhou</h3><div class="el-f"><input id="elV" placeholder="Coloque seu @ aqui" value="${html(h || '')}" autocomplete="off"><button class="chip y" id="elVGo">ver meu resultado</button></div><div class="el-msg" id="elMsg"></div></div>`;
-    if (k.fase === 'votacao') body += `<div class="sec"><h3>Votar</h3><div class="el-f"><input id="elV" placeholder="Coloque seu @ aqui para votar" value="${html(h || '')}" autocomplete="off"><button class="chip y" id="elVGo">ver meus cargos</button></div><div class="el-msg" id="elMsg"></div></div>`;
+    if (k.fase === 'resultado' && races.length) body += logged() ? `<div class="sec"><h3>Ver quem ganhou</h3><div class="el-me">👤 @${html(ME)}</div><div class="el-msg" id="elMsg"></div></div>` : `<div class="sec"><h3>Ver quem ganhou</h3><div class="el-f"><input id="elV" placeholder="Coloque seu @ aqui" value="${html(h || '')}" autocomplete="off"><button class="chip y" id="elVGo">ver meu resultado</button></div><div class="el-msg" id="elMsg"></div></div>`;
+    if (k.fase === 'votacao') body += logged() ? `<div class="sec"><h3>🗳️ Votar</h3><div class="el-me">👤 Votando como <b>@${html(ME)}</b> <button class="chip" id="elSw" style="font-size:12px;padding:2px 10px;box-shadow:none">trocar conta</button></div><p class="note" style="margin:6px 0 0">Escolha <b>1 candidato em cada cargo</b> abaixo: toque em “escolher” e depois em “confirmar voto”. O voto não pode ser mudado.</p><div class="el-msg" id="elMsg"></div></div>` : loginGate('votar');
     if (!races.length) body += `<p>${k.fase === 'votacao' ? 'Nenhuma candidatura aprovada nesta eleição.' : 'Ainda não houve votação nesta semana.'}</p>`;
     if (mine.length) body += `<div class="sec"><h3>${k.fase === 'votacao' ? 'Seus cargos para votar' : 'Seus cargos'}</h3>${mine.map(r => raceHTML(r, k.fase === 'votacao', voted.has(r), h)).join('')}</div>`;
     if (rest.length) body += `<div class="sec"><h3>${k.fase === 'votacao' ? 'Outras disputas (apuração ao vivo)' : 'Resultado'}</h3>${rest.slice(0, 40).map(r => raceHTML(r, false, false)).join('')}</div>`;
-    mc.innerHTML = head() + body; bindX();
+    mc.innerHTML = head() + body; bindX(); bindGate(); bindCands();
+    const sw = mc.querySelector('#elSw'); if (sw) sw.onclick = () => { AFTER_LOGIN = openElection; openAcctLogin(); };
+    mc.querySelectorAll('[data-pf]').forEach(a => a.onclick = () => openProfile(a.dataset.pf));
     const go = mc.querySelector('#elVGo');
     if (go) go.onclick = async () => { const hh = cleanE($('elV').value); if (!hh) return; if (!players[hh] || !players[hh].casas.length) { $('elMsg').style.color = 'var(--red)'; $('elMsg').textContent = 'Esse @ não tem casa no mapa: só quem mora no jogo vota.'; return; } render(hh, await dbVoted(k.ed, hh));
       if (k.fase === 'resultado') { const won = races.filter(r => winners(r, cands, counts).win.some(w => w.h === hh)); const m2 = $('elMsg');
@@ -2755,14 +2795,20 @@ async function openElection_() {
         else if (m2) { m2.style.color = 'var(--muted)'; m2.textContent = `@${hh} não venceu nesta eleição. Sábado tem outra: candidate-se ao meio-dia!`; } } };
     mc.querySelectorAll('[data-v]').forEach(b => b.onclick = async () => {
       const [race, cand] = b.dataset.v.split('|');
+      if (!logged() || h !== ME) { AFTER_LOGIN = openElection; openAcctLogin(); return; }
       if (cand === h) { toast('Não dá para votar em si mesmo'); return; }
+      if (!b.dataset.ok) { mc.querySelectorAll(`[data-v^="${race}|"]`).forEach(x => { delete x.dataset.ok; x.textContent = 'escolher'; x.closest('.el-c').classList.remove('pick'); }); b.dataset.ok = 1; b.textContent = '✅ confirmar voto'; b.closest('.el-c').classList.add('pick'); return; }
       b.disabled = true;
       const { error } = await sb.from('vsp_votes').insert({ ed:k.ed, voter:h, race, cand });
       if (error) { b.disabled = false; toast(/duplicate|unique/i.test(error.message || '') ? 'Você já votou neste cargo' : 'Voto não aceito (fora do horário ou @ sem casa)'); return; }
       toast(`Voto registrado em @${cand} 🗳️`); const c2 = await dbCounts(k.ed); Object.assign(counts, c2); voted.add(race); render(h, voted);
     });
   };
-  render('', new Set());
+  if (logged()) { render(ME, await dbVoted(k.ed, ME));
+    if (k.fase === 'resultado') { const won = races.filter(r => winners(r, cands, counts).win.some(w => w.h === ME)); const m2 = $('elMsg');
+      if (m2 && won.length) { fireworks(); m2.style.color = '#1f9d55'; m2.innerHTML = `🎆 Parabéns, @${html(ME)}! Você venceu: <b>${won.map(r => html(raceName(r))).join(', ')}</b>. A posse sai quando a página confirmar.`; }
+      else if (m2) { m2.style.color = 'var(--muted)'; m2.textContent = 'Você não venceu nesta eleição. Sábado tem outra: candidate-se ao meio-dia!'; } }
+  } else render('', new Set());
 }
 // ---------- dono: aprovar candidaturas e dar posse ----------
 async function openElectionAdmin() {
@@ -2843,7 +2889,9 @@ document.getElementById('cElec').addEventListener('click', () => { try { localSt
 // ======================= MINHA CONTA (entra só com o @) =======================
 // pedidos de apoio entre @ → com 1 apoio aceito você pode fundar seu partido; outros @ podem se filiar
 let ME = ''; try { ME = localStorage.getItem('vsp_me') || ''; } catch (e) {}
-let PARTIDOS = [], FILI = {}; // FILI: handle → partido_id
+let AFTER_LOGIN = null; // depois de entrar, volta para a tela que pediu login (ex.: eleição)
+const logged = () => !!(ME && players[ME]);
+let PARTIDOS = [], FILI = {}, APOIANDO = new Set(); // FILI: handle → partido_id
 const PCORES = ['#ffd23f', '#ff8a3d', '#e84a5f', '#c86bfa', '#3b6fe0', '#1fb5c9', '#2bb673', '#2b3442'];
 const partyLabel = P => `${P.sigla} - ${P.nome}`.slice(0, 40);
 const partyOf = h => { const id = FILI[h]; return id ? PARTIDOS.find(P => P.id === id) : null; };
@@ -2860,6 +2908,9 @@ cCss.textContent = `.ac-hd{display:flex;align-items:center;gap:10px;border:2px s
 .ac-r .chip{font-size:13px;padding:3px 10px;box-shadow:0 2px 0 var(--ink)}.ptag{display:inline-block;border:2px solid var(--ink);border-radius:8px;padding:0 6px;font:900 11px var(--body);vertical-align:2px}
 .ac-lv{display:flex;gap:10px;align-items:center;margin-top:10px}.ac-lv img{width:64px;height:64px;flex:none;background:var(--sky);border:3px solid var(--ink);border-radius:14px}.ac-lv>span{flex:1;min-width:0;display:grid;gap:3px}.ac-lv b{font-family:var(--display);font-weight:400;font-size:19px}.ac-lv small{font-weight:800;color:var(--muted);font-size:12px}
 .ac-acts{grid-template-columns:1fr 1fr}.ac-acts .act{font-size:13.5px;padding:8px 10px;flex-direction:column;align-items:flex-start;gap:2px}.ac-acts .act small{font-size:12.5px}
+.ap-sug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:3;background:#fff;border:2px solid var(--ink);border-radius:12px;box-shadow:0 3px 0 var(--ink);padding:4px;max-height:260px;overflow:auto}.ap-sug small{display:block;font-weight:800;color:var(--muted);font-size:11px;padding:4px 8px}
+.ap-sug button{display:flex;justify-content:space-between;gap:8px;width:100%;border:0;background:none;padding:8px;border-radius:8px;cursor:pointer;font:800 14px var(--body);text-align:left}.ap-sug button:hover{background:var(--line)}.ap-sug button span{color:var(--muted);font-size:12px;white-space:nowrap}
+.el-c .nm{white-space:normal}
 .ac-cores{display:flex;gap:6px;flex-wrap:wrap}.ac-cores button{width:30px;height:30px;border-radius:50%;border:2px solid var(--ink);cursor:pointer}.ac-cores button.on{outline:3px solid var(--ink);outline-offset:2px}
 #cConta{position:absolute;z-index:6;top:max(12px,env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));height:46px;display:inline-flex;align-items:center;gap:6px;border:3px solid var(--ink);border-radius:99px;background:var(--paper);padding:0 16px 0 10px;font-family:var(--display);font-size:17px;cursor:pointer;box-shadow:0 4px 0 var(--ink);white-space:nowrap}
 #cConta:hover{background:var(--sun)}#cConta:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}#cConta .ai{font-size:20px;line-height:1}
@@ -2877,7 +2928,7 @@ function openAcctLogin(msg) {
     <p class="note">Ainda não tem casa? Comente sua <b>cidade + estado</b> no post do <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a>.</p>`);
   const go = () => { const h = cleanE($('acH').value); if (!h) return accMsg($('acMsg'), 0, 'Coloque seu @.');
     if (!players[h]) return accMsg($('acMsg'), 0, `@${h} ainda não tem casa no mapa. Comente sua cidade + estado no post e volte aqui!`);
-    ME = h; try { localStorage.setItem('vsp_me', h); } catch (e) {} contaBadge(); toast('👋 Bem-vindo(a), @' + h + '!'); openConta_(); };
+    ME = h; try { localStorage.setItem('vsp_me', h); } catch (e) {} contaBadge(); toast('👋 Bem-vindo(a), @' + h + '!'); if (AFTER_LOGIN) { const f = AFTER_LOGIN; AFTER_LOGIN = null; f(); } else openConta_(); };
   $('acGo').onclick = go; $('acH').onkeydown = e => { if (e.key === 'Enter') go(); }; setTimeout(() => $('acH').focus(), 50);
 }
 async function openConta_() {
@@ -2886,10 +2937,11 @@ async function openConta_() {
   let rec = [], env = [], ok = true;
   if (sb) {
     const lp = loadPartidos();
+    const la = withT(sb.from('vsp_apoio').select('to_h').eq('status', 'aceito').limit(5000)).then(r => { if (!r.error) APOIANDO = new Set((r.data || []).map(x => x.to_h)); });
     const [a, b] = await Promise.all([withT(sb.from('vsp_apoio').select('id,from_h,to_h,msg,status,created_at').eq('to_h', ME).order('id', { ascending:false }).limit(200)),
       withT(sb.from('vsp_apoio').select('id,from_h,to_h,msg,status,created_at').eq('from_h', ME).order('id', { ascending:false }).limit(200))]);
     if (a.error || b.error) ok = false; rec = a.data || []; env = b.data || [];
-    await lp;
+    await lp; await la;
   } else ok = false;
   if ($('modal').hidden) return;
   const pend = rec.filter(x => x.status === 'pendente'), apoiadores = env.filter(x => x.status === 'aceito'), espera = env.filter(x => x.status === 'pendente'), apoiei = rec.filter(x => x.status === 'aceito');
@@ -2928,7 +2980,7 @@ async function openConta_() {
     <div class="ac-hd"><span class="av" style="background:${p.side === 'b' ? 'var(--blue)' : p.side === 'r' ? 'var(--red)' : '#c9ced8'}">🏠</span><span style="flex:1;min-width:0"><b>@${html(ME)} ${ptag(meuP)}</b><small>${html(c.name)} - ${c.uf} · Nv ${levelOf(p)} · ${fmt(scoreOf(p))} pts · ${side}${meuP ? ' · ' + html(meuP.nome) : ''}</small></span></div>
     ${painel()}
     ${ok ? '' : '<p class="el-msg" style="color:var(--red)">A área de apoio está sendo ativada. Volte daqui a pouco!</p>'}
-    <div class="sec"><h3>🤝 Pedir apoio</h3><div class="el-f"><input id="apH" placeholder="@ de quem você quer apoio" autocomplete="off" autocapitalize="none"><input id="apM" maxlength="140" placeholder="mensagem (opcional): ex. me apoia para prefeito!"><button class="chip y" id="apGo">pedir apoio</button></div><div class="el-msg" id="apMsg"></div>
+    <div class="sec"><h3>🤝 Pedir apoio</h3><div class="el-f"><div style="position:relative"><input id="apH" placeholder="digite o @ de quem você quer apoio" autocomplete="off" autocapitalize="none" style="width:100%;box-sizing:border-box"><div class="ap-sug" id="apSug" hidden></div></div><input id="apM" maxlength="140" placeholder="mensagem (opcional): ex. me apoia para prefeito!"><button class="chip y" id="apGo">pedir apoio</button></div><div class="el-msg" id="apMsg"></div>
     <p class="note">Avise a pessoa nos comentários ou no direct: ela entra aqui com o @ dela e aceita.</p></div>
     <div class="sec"><h3>📥 Pedidos recebidos ${pend.length ? `<span class="ptag" style="background:var(--red);color:#fff">${pend.length}</span>` : ''}</h3>
     ${pend.length ? pend.map(x => `<div class="ac-r"><span class="nm">@${html(x.from_h)}${who(x.from_h)}${x.msg ? `<small>“${html(x.msg)}”</small>` : ''}</span><button class="chip y" data-ok="${x.id}">aceitar</button><button class="chip" data-no="${x.id}">recusar</button></div>`).join('') : '<p class="note">Nenhum pedido novo.</p>'}
@@ -2946,6 +2998,15 @@ async function openConta_() {
   $('aFol').onclick = () => openFollow();
   $('aAli').onclick = () => openJoin('aliado', { city:ctag(ci) });
   $('aRank').onclick = () => openRanking();
+  // sugestões: quem tem casa no jogo e ainda não apoia ninguém (e você ainda não pediu)
+  const pedidos = new Set(env.map(x => x.to_h));
+  const sugL = () => { const q = cleanE($('apH').value);
+    return Object.keys(players).filter(x => x !== ME && players[x].casas.length && !APOIANDO.has(x) && !pedidos.has(x) && (!q || x.includes(q)))
+      .sort((a, b) => (q ? (a.startsWith(q) ? 0 : 1) - (b.startsWith(q) ? 0 : 1) : 0) || (players[b].casas[0] === ci) - (players[a].casas[0] === ci) || scoreOf(players[b]) - scoreOf(players[a])).slice(0, 8); };
+  const drawSug = () => { const L = sugL(), box = $('apSug'); if (!L.length || document.activeElement !== $('apH')) { box.hidden = true; return; }
+    box.innerHTML = `<small>Têm casa e ainda não apoiam ninguém</small>` + L.map(x => { const c2 = cities[players[x].casas[0]]; return `<button type="button" data-ap="${html(x)}"><b>@${html(x)}</b><span>${html(c2.name)}-${c2.uf} · Nv ${levelOf(players[x])}</span></button>`; }).join('');
+    box.hidden = false; box.querySelectorAll('[data-ap]').forEach(b => b.onmousedown = e => { e.preventDefault(); $('apH').value = b.dataset.ap; box.hidden = true; }); };
+  $('apH').oninput = drawSug; $('apH').onfocus = drawSug; $('apH').onblur = () => setTimeout(() => { const b = $('apSug'); if (b) b.hidden = true; }, 150);
   $('apGo').onclick = async () => {
     const t = cleanE($('apH').value), m = $('apMsg');
     if (!t) return accMsg(m, 0, 'Coloque o @ de quem você quer apoio.');
