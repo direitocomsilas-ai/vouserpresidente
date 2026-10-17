@@ -1305,7 +1305,7 @@ const curDist = () => camera.position.distanceTo(controls.target);
 function focusCity(ci, d) { const c = cities[ci]; d = d || Math.max(2.2, ((TOT(c) ? c.rad : 2) + 2) * CELL * 4.2); flyTo(new THREE.Vector3(c.x, TOP, c.z + (innerWidth < 760 ? 1.6 : 0)), Math.min(curDist(), d)); }
 $('zin').onclick = () => flyTo(controls.target, Math.max(.7, curDist() * .5));
 $('zout').onclick = () => flyTo(controls.target, Math.min(650, curDist() * 1.8));
-$('zall').onclick = () => { closePanel(); flyTo(CENTER, fitDist()); };
+$('zall').onclick = () => { closePanel(); if (typeof clearHighlight === 'function') clearHighlight(); flyTo(CENTER, fitDist()); };
 
 // Toque: escolhe a cidade mais próxima na tela
 const v3 = new THREE.Vector3();
@@ -1350,7 +1350,7 @@ canvas.addEventListener('pointerup', e => {
   if (!nc || Math.sqrt(nd) > 3.2) return; // fora do Brasil
   v3.set(nc.x, TOP, nc.z).project(camera); const cx = (v3.x + 1) / 2 * w, cy = (1 - v3.y) / 2 * h;
   if (curDist() < 26 && Math.hypot(cx - mx, cy - my) < 26) { select(nc.i); return; }
-  openStateCard(nc.uf);
+  highlightState(nc.uf);
 });
 // ---------- Card do estado (toque num estado do mapa) ----------
 function openStateCard(uf) {
@@ -1385,7 +1385,7 @@ function showTapTip(force) {
   let seen = ''; try { seen = localStorage.getItem('vsp_tip') || ''; } catch (e) {}
   if ((seen && !force) || document.getElementById('tapTip')) return;
   const d = document.createElement('div'); d.id = 'tapTip';
-  d.innerHTML = `<span class="hand">👆</span> <b>Toque num estado</b> para ver o resumo dele, ou <b>numa cidade</b> para ver as casas e os @. Arraste com 1 dedo · zoom com 2.<button class="x" aria-label="Fechar">✕</button>`;
+  d.innerHTML = `<span class="hand">👆</span> <b>Toque num estado</b> para destacá-lo com as maiores cidades, ou <b>numa cidade</b> para ver as casas e os @. Arraste com 1 dedo · zoom com 2.<button class="x" aria-label="Fechar">✕</button>`;
   d.querySelector('.x').onclick = tipDone; document.body.appendChild(d);
 }
 setTimeout(() => { if (!window.__STATE) showTapTip(); }, 2500);
@@ -1508,7 +1508,7 @@ function loop(t) {
   if (dirty) { HM.forEach(m => m.instanceMatrix.needsUpdate = true); flagIM.instanceMatrix.needsUpdate = true; }
   if (!RM) clouds.forEach((g, i) => { g.position.x += .01 + i * .0015; if (g.position.x > minX + span + 15) g.position.x = minX - 15; });
   updateTraffic(t, d);
-  drawLabels(d); drawHouseLabel(); drawFanLabels(d);
+  drawLabels(d); drawHouseLabel(); drawFanLabels(d); drawStateTags();
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
@@ -1710,7 +1710,7 @@ function addCloser(el, k) {
 }
 openBoardBtn.onclick = () => { FOLD.board = false; applyFold(); };
 openPopBtn.onclick = () => { FOLD.pop = false; applyFold(); };
-function refresh() { rebuildAll(); renderHUD(); }
+function refresh() { rebuildAll(); renderHUD(); if (window.__presReady) updatePresCard(); }
 
 $('cBsb').onclick = () => select(BSB);
 
@@ -2851,17 +2851,31 @@ async function castCommentVotes(L) {
   toast(`🗳️ ${ok} voto(s) dos comentários na urna`);
 }
 // fogos de artifício para quem ganhou
-function fireworks(ms = 4500) {
+function fireworks(ms = 6500) {
+  // fogos de felicidade: foguetes com rastro que sobem e explodem em anéis, chuva de brilho e confete
   const cv = document.createElement('canvas'); cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:20';
-  document.getElementById('app').appendChild(cv); const W = cv.width = innerWidth, H = cv.height = innerHeight, g = cv.getContext('2d');
-  const P = [], cols = ['#ffc93c', '#2f6fec', '#e5484d', '#3ad17a', '#ffffff', '#ff8a1f', '#d6249f'], t0 = performance.now(); let last = 0;
-  const burst = () => { const x = W * (.15 + Math.random() * .7), y = H * (.12 + Math.random() * .4), c = cols[Math.floor(Math.random() * cols.length)];
-    for (let i = 0; i < 70; i++) { const a = Math.random() * 6.283, v = 2 + Math.random() * 5; P.push({ x, y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, l:1, c }); } };
-  const step = now => { const el = now - t0; if (el < ms - 900 && now - last > 330) { burst(); last = now; }
-    g.fillStyle = 'rgba(0,0,0,0)'; g.clearRect(0, 0, W, H);
-    for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; p.x += p.vx; p.y += p.vy; p.vy += .07; p.vx *= .985; p.l -= .013; if (p.l <= 0) { P.splice(i, 1); continue; } g.globalAlpha = p.l; g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, 3.2, 0, 6.283); g.fill(); }
-    if (el < ms || P.length) requestAnimationFrame(step); else cv.remove(); };
-  burst(); requestAnimationFrame(step);
+  document.getElementById('app').appendChild(cv); const dpr = Math.min(2, devicePixelRatio || 1), W = innerWidth, H = innerHeight; cv.width = W * dpr; cv.height = H * dpr;
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const P = [], R = [], CF = [], cols = ['#ffc93c', '#2f6fec', '#e5484d', '#3ad17a', '#ffffff', '#ff8a1f', '#d6249f', '#7fe3ff'], t0 = performance.now(); let last = 0, lastT = t0;
+  const rnd = (a, b) => a + Math.random() * (b - a), pick = () => cols[Math.floor(Math.random() * cols.length)];
+  const rocket = () => R.push({ x:W * rnd(.12, .88), y:H + 10, vx:rnd(-1.2, 1.2), vy:-rnd(H * .012 + 7, H * .014 + 9), ty:H * rnd(.12, .45), c:pick() });
+  const boom = (x, y, c) => { const c2 = Math.random() < .5 ? pick() : c, n = 110 + Math.floor(Math.random() * 60), ring = Math.random() < .35;
+    for (let i = 0; i < n; i++) { const a = Math.random() * 6.283, v = ring ? 5 : rnd(1.2, 6); P.push({ x, y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, l:1, d:rnd(.008, .016), c:i % 3 ? c : c2, s:rnd(2.2, 3.8), tw:Math.random() < .3 }); }
+    for (let i = 0; i < 26; i++) P.push({ x, y, vx:rnd(-1.5, 1.5), vy:rnd(-1, 2), l:1.3, d:.006, c:'#fff6c8', s:1.6, tw:true }); };
+  for (let i = 0; i < 70; i++) CF.push({ x:rnd(0, W), y:rnd(-H, 0), vy:rnd(1.5, 3.5), vx:rnd(-.6, .6), r:rnd(0, 6.28), vr:rnd(-.2, .2), w:rnd(6, 11), h:rnd(9, 16), c:pick() });
+  const step = now => { const el = now - t0, f = Math.min(3, (now - lastT) / 16.7); lastT = now;
+    if (el < ms - 1500 && now - last > 260) { rocket(); if (Math.random() < .5) rocket(); last = now; }
+    g.clearRect(0, 0, W, H);
+    for (let i = R.length - 1; i >= 0; i--) { const r = R[i]; r.x += r.vx * f; r.y += r.vy * f; r.vy += .12 * f;
+      g.globalAlpha = 1; g.fillStyle = r.c; g.beginPath(); g.arc(r.x, r.y, 3, 0, 6.283); g.fill();
+      for (let k = 1; k < 6; k++) { g.globalAlpha = .5 - k * .08; g.beginPath(); g.arc(r.x - r.vx * k * 1.5, r.y - r.vy * k * 1.5, 2.4 - k * .3, 0, 6.283); g.fill(); }
+      if (r.y <= r.ty || r.vy >= -1) { boom(r.x, r.y, r.c); R.splice(i, 1); } }
+    for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; p.x += p.vx * f; p.y += p.vy * f; p.vy += .06 * f; p.vx *= Math.pow(.975, f); p.vy *= Math.pow(.985, f); p.l -= p.d * f;
+      if (p.l <= 0) { P.splice(i, 1); continue; } g.globalAlpha = Math.max(0, p.tw ? p.l * (.5 + .5 * Math.sin(now * .05 + i)) : p.l); g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, p.s * (.6 + .4 * p.l), 0, 6.283); g.fill(); }
+    if (el < ms) for (const c of CF) { c.y += c.vy * f; c.x += c.vx * f + Math.sin(now * .002 + c.r) * .4; c.r += c.vr * f; if (c.y > H + 20) { c.y = -20; c.x = rnd(0, W); }
+      g.save(); g.globalAlpha = Math.min(1, (ms - el) / 800); g.translate(c.x, c.y); g.rotate(c.r); g.fillStyle = c.c; g.fillRect(-c.w / 2, -c.h / 2 * Math.abs(Math.cos(c.r * 2)), c.w, c.h * Math.abs(Math.cos(c.r * 2)) + 1); g.restore(); }
+    if (el < ms || P.length || R.length) requestAnimationFrame(step); else cv.remove(); };
+  for (let i = 0; i < 3; i++) setTimeout(rocket, i * 140); boom(W * .5, H * .3, '#ffc93c'); requestAnimationFrame(step);
 }
 // seta lembrando: candidaturas abertas, votação aberta e resultado saiu
 const arrowEl = document.createElement('div'); arrowEl.id = 'elecArrow'; arrowEl.hidden = true;
@@ -3055,10 +3069,130 @@ new MutationObserver(() => {
 if (!window.__STATE) { loadPartidos(); contaBadge(); setTimeout(contaBadge, 6000); setInterval(contaBadge, 120000); }
 addEventListener('resize', updateElecArrow); setTimeout(updateElecArrow, 2500);
 
+
+// ======================= PRESIDENTE EM DESTAQUE + GOVERNO POR ESTADO =======================
+const presCard = document.createElement('button'); presCard.id = 'presCard'; presCard.className = 'card'; presCard.setAttribute('aria-label', 'Presidente do Brasil e governo');
+document.getElementById('app').appendChild(presCard);
+const pcCss = document.createElement('style');
+pcCss.textContent = `#presCard{position:absolute;z-index:6;left:max(16px,env(safe-area-inset-left,0px));top:calc(max(12px,env(safe-area-inset-top,0px)) + 58px);width:230px;display:flex;align-items:center;gap:9px;padding:7px 10px;text-align:left;cursor:pointer;font:inherit;color:var(--ink);background:linear-gradient(135deg,#fff7d6,#fff);overflow:hidden}
+#presCard:hover{background:#fff1b8}#presCard .pi{flex:none;width:46px;height:46px;border-radius:12px;border:2.5px solid var(--ink);background:var(--sky);display:grid;place-items:center;font-size:24px;overflow:hidden;position:relative}
+#presCard .pi img{width:100%;height:100%}#presCard .pi .cr{position:absolute;top:-4px;left:50%;transform:translateX(-50%);font-size:16px}
+#presCard .pt{min-width:0;flex:1}#presCard small{display:block;font:900 9.5px var(--body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+#presCard b{display:block;font-family:var(--display);font-weight:400;font-size:18px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#presCard i{display:block;font-style:normal;font-weight:800;font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#presCard.b{border-color:var(--blue);box-shadow:0 4px 0 var(--blue)}#presCard.r{border-color:var(--red);box-shadow:0 4px 0 var(--red)}
+#presCard .pgo{flex:none;font:900 16px var(--body);color:var(--muted)}
+@keyframes pcGlow{0%,100%{box-shadow:0 4px 0 var(--ink)}50%{box-shadow:0 4px 0 var(--ink),0 0 0 5px rgba(255,201,60,.55)}}#presCard.vago{animation:pcGlow 2.2s ease-in-out infinite}
+@media (min-width:761px){#board{top:calc(max(12px,env(safe-area-inset-top,0px)) + 130px)!important}#openBoard{top:calc(max(12px,env(safe-area-inset-top,0px)) + 130px)!important}}
+@media (max-width:760px){#presCard{top:calc(172px + env(safe-area-inset-top,0px));width:178px;padding:5px 7px;gap:7px}#presCard .pi{width:34px;height:34px;font-size:18px;border-radius:9px}#presCard b{font-size:14px}#presCard small{font-size:8.5px}#presCard i{font-size:10px}#presCard .pgo{display:none}
+ #board{top:calc(226px + env(safe-area-inset-top,0px))!important}#openBoard{top:calc(226px + env(safe-area-inset-top,0px))!important}}
+.gv-st{border:2px solid var(--ink);border-radius:14px;padding:8px 10px;margin-top:8px}.gv-st h4{margin:0 0 4px;font-family:var(--display);font-weight:400;font-size:17px;display:flex;align-items:center;gap:8px}
+.gv-st h4 button{margin-left:auto;font-size:12px;padding:2px 10px;box-shadow:none}
+.gv-r{display:flex;gap:6px;align-items:baseline;font-weight:800;font-size:13px;padding:2px 0;flex-wrap:wrap}.gv-r>span:first-child{color:var(--muted);min-width:118px;font-size:12px}.gv-r .vg{color:#9aa1ae;font-weight:700}
+.gv-r a{cursor:pointer;text-decoration:underline;text-decoration-thickness:1px}
+.gv-top{border:3px solid var(--ink);border-radius:16px;padding:10px 12px;background:linear-gradient(135deg,#fff7d6,#fff);display:flex;gap:10px;align-items:center}.gv-top .pi{width:64px;height:64px;border-radius:14px;border:3px solid var(--ink);background:var(--sky);flex:none;overflow:hidden;display:grid;place-items:center;font-size:30px}.gv-top .pi img{width:100%;height:100%}
+.gv-top b{font-family:var(--display);font-weight:400;font-size:24px;display:block}.gv-top small{font-weight:800;color:var(--muted)}`;
+document.head.appendChild(pcCss);
+function curPres() { try { const e = elected('pres:BR'); return e.length ? e[0] : null; } catch (e) { return null; } }
+function updatePresCard() {
+  const P = curPres(), k = elecClock();
+  if (P && players[P.h]) {
+    const p = players[P.h], c = cities[p.casas[0]];
+    presCard.className = 'card ' + (p.side || 'n');
+    presCard.innerHTML = `<span class="pi">${lvImg(levelOf(p))}<span class="cr">👑</span></span><span class="pt"><small>Presidente do Brasil</small><b>@${html(P.h)}</b><i>${html(P.party || '')}${c ? ' · ' + html(c.uf) : ''}</i></span><span class="pgo">›</span>`;
+  } else {
+    presCard.className = 'card vago';
+    const st = k.fase === 'candidaturas' ? 'candidaturas abertas!' : k.fase === 'votacao' ? 'votação aberta!' : 'eleição no sábado';
+    presCard.innerHTML = `<span class="pi">🏛️</span><span class="pt"><small>Presidente do Brasil</small><b>Cadeira vaga</b><i>${st} · ver governo</i></span><span class="pgo">›</span>`;
+  }
+}
+presCard.onclick = () => openGoverno();
+setInterval(updatePresCard, 30000);
+function openGoverno(uf0) {
+  const P = curPres(), ufs = Object.keys(STATE);
+  const who = h => h && players[h] ? `<a data-pf="${html(h)}">@${html(h)}</a>` : '<span class="vg">vago</span>';
+  const prefs = uf => cities.filter(c => c.uf === uf && TOT(c)).map(c => { const o = officials(c.i); return o.pref ? [c, o] : null; }).filter(Boolean);
+  const filled = uf => (OFF.gov[uf] ? 1 : 0) + (OFF.sen[uf] ? 1 : 0) + ((OFF.dep[uf] || []).length) + prefs(uf).length;
+  const order = uf0 ? [uf0] : ufs.slice().sort((a, b) => filled(b) - filled(a) || a.localeCompare(b));
+  const p = P && players[P.h];
+  openModal(`<h2>🏛️ Governo do Brasil virtual</h2>
+    <div class="gv-top"><span class="pi">${p ? lvImg(levelOf(p)) : '🏛️'}</span><span><small>👑 PRESIDENTE DO BRASIL · mandato da semana</small><b>${P ? `<a class="plink" data-pf="${html(P.h)}" style="cursor:pointer">@${html(P.h)}</a>` : 'Cadeira vaga'}</b><small>${P ? `${html(P.party || '')} · ${sideEmo(p && p.side)} ${sideName(p && p.side)}` : 'A eleição é toda semana: candidaturas sábado 12h–19h, votação até domingo 21h.'}</small></span></div>
+    <div class="ppl" style="margin-top:10px">${uf0 ? `<button class="pp go" data-uf="">⬅ todos os estados</button>` : ''}${(uf0 ? [] : ufs).map(u => `<button class="pp go" data-uf="${u}">${u}${filled(u) ? ' · ' + filled(u) : ''}</button>`).join('')}</div>
+    ${order.map(uf => { const pf = prefs(uf); return `<div class="gv-st"><h4>${html(STATE[uf])} <small style="font-family:var(--body);font-size:12px;color:var(--muted)">${uf}</small><button class="chip" data-hl="${uf}">🔦 ver no mapa</button></h4>
+      <div class="gv-r"><span>🗺️ Governador(a)</span>${who(OFF.gov[uf])}</div>
+      <div class="gv-r"><span>🏛️ Senador(a)</span>${who(OFF.sen[uf])}</div>
+      <div class="gv-r"><span>📜 Deputados federais</span>${(OFF.dep[uf] || []).length ? OFF.dep[uf].map(who).join(', ') : '<span class="vg">vagos</span>'}</div>
+      <div class="gv-r"><span>🏙️ Prefeitos</span>${pf.length ? pf.slice(0, uf0 ? 200 : 6).map(([c, o]) => `${who(o.pref[0])} <small style="color:var(--muted)">(${html(c.name)}${o.ver.length ? ' + ' + o.ver.length + ' ver.' : ''})</small>`).join(', ') + (!uf0 && pf.length > 6 ? ` <a data-uf="${uf}">+${pf.length - 6}</a>` : '') : '<span class="vg">nenhum eleito ainda</span>'}</div></div>`; }).join('')}
+    <p class="note">Os cargos valem pela semana e saem da eleição (só o fundador da cidade é permanente). Toque num @ para ver o perfil.</p>`, true);
+  const mc = $('mcard');
+  mc.querySelectorAll('[data-pf]').forEach(a => a.onclick = () => openProfile(a.dataset.pf));
+  mc.querySelectorAll('[data-uf]').forEach(b => b.onclick = () => openGoverno(b.dataset.uf || undefined));
+  mc.querySelectorAll('[data-hl]').forEach(b => b.onclick = () => { closeModal(); highlightState(b.dataset.hl); });
+  if (P && !uf0) fireworks(5000);
+}
+
+// ======================= DESTACAR ESTADO NO MAPA =======================
+// liga cada contorno (GEO.st) ao estado que tem mais cidades dentro dele
+const inRing = (x, z, R) => { let ins = false; for (let i = 0, j = R.length - 1; i < R.length; j = i++) { const [xi, zi] = R[i], [xj, zj] = R[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) ins = !ins; } return ins; };
+let RING_UF = null;
+function ringUf() {
+  if (RING_UF) return RING_UF;
+  RING_UF = BORDER_RINGS.map(R => { if (R.length < 8) return null; let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity; R.forEach(([x, z]) => { mnx = Math.min(mnx, x); mxx = Math.max(mxx, x); mnz = Math.min(mnz, z); mxz = Math.max(mxz, z); });
+    const cnt = {}; for (const c of cities) { if (c.x < mnx || c.x > mxx || c.z < mnz || c.z > mxz) continue; if (inRing(c.x, c.z, R)) cnt[c.uf] = (cnt[c.uf] || 0) + 1; }
+    const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]; return best ? best[0] : null; });
+  return RING_UF;
+}
+let HL = null; // { uf, group, top:[ci], tags:[el] }
+const hlCss = document.createElement('style');
+hlCss.textContent = `.sttag{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;z-index:3;display:inline-flex;align-items:center;gap:6px;background:var(--sun);border:3px solid var(--ink);border-radius:99px;padding:3px 10px 3px 4px;font:900 13px var(--body);box-shadow:0 3px 0 var(--ink);white-space:nowrap}
+.sttag .rk{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--ink);color:#fff;font-size:11px}.sttag.r1{font-size:15px;padding:4px 12px 4px 5px}.sttag.r1 .rk{background:#d99a00;width:26px;height:26px}
+#hlBar{position:absolute;left:50%;transform:translateX(-50%);top:calc(max(12px,env(safe-area-inset-top,0px)) + 158px);z-index:6;display:flex;gap:8px;align-items:center;background:var(--paper);border:3px solid var(--ink);border-radius:99px;padding:5px 6px 5px 14px;box-shadow:0 4px 0 var(--ink);font-family:var(--display);font-size:17px;white-space:nowrap;max-width:calc(100% - 32px)}
+#hlBar button{border:2px solid var(--ink);border-radius:99px;background:var(--sun);font:900 12.5px var(--body);padding:3px 10px;cursor:pointer}#hlBar button.x{background:#fff}
+@media (max-width:760px){#hlBar{left:max(16px,env(safe-area-inset-left,0px));transform:none;top:calc(226px + env(safe-area-inset-top,0px));font-size:15px;padding:4px 5px 4px 12px;gap:5px}#hlBar button{font-size:11.5px;padding:2px 8px}body.hlOn #board,body.hlOn #openBoard{display:none!important}}`;
+document.head.appendChild(hlCss);
+function clearHighlight() {
+  if (!HL) return; scene.remove(HL.group); HL.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); HL.tags.forEach(e => e.remove()); const b = document.getElementById('hlBar'); if (b) b.remove(); HL = null; document.body.classList.remove('hlOn');
+}
+function highlightState(uf, fly = true) {
+  clearHighlight();
+  const map = ringUf(), group = new THREE.Group();
+  const fill = new THREE.MeshBasicMaterial({ color:0xffd84a, transparent:true, opacity:.4, depthWrite:false, side:THREE.DoubleSide });
+  let mnx = Infinity, mxx = -Infinity, mnz = Infinity, mxz = -Infinity;
+  BORDER_RINGS.forEach((R, i) => { if (map[i] !== uf) return;
+    const sh = new THREE.Shape(); R.forEach(([x, z], j) => j ? sh.lineTo(x, -z) : sh.moveTo(x, -z));
+    const m = new THREE.Mesh(new THREE.ShapeGeometry(sh), fill); m.rotation.x = -Math.PI / 2; m.position.y = TOP + .07; m.renderOrder = 3; group.add(m);
+    // contorno grosso (faixa) amarelo
+    const pos = [], w = .13;
+    for (let a = 0, n = R.length; a < n; a++) { const [ax, az] = R[a], [bx, bz] = R[(a + 1) % n]; const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz); if (L < 1e-6) continue; const nx = -dz / L * w, nz = dx / L * w;
+      pos.push(ax + nx, 0, az + nz, ax - nx, 0, az - nz, bx + nx, 0, bz + nz, bx + nx, 0, bz + nz, ax - nx, 0, az - nz, bx - nx, 0, bz - nz);
+      mnx = Math.min(mnx, ax); mxx = Math.max(mxx, ax); mnz = Math.min(mnz, az); mxz = Math.max(mxz, az); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const line = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color:0xffb400, depthWrite:false, side:THREE.DoubleSide })); line.position.y = TOP + .09; line.renderOrder = 4; group.add(line);
+  });
+  scene.add(group); window.__hl = { tg:() => [controls.target.x, controls.target.z, curDist(), focus && [focus.t.x, focus.t.z, focus.d]], fc:() => { const c = cities[capOf[uf]]; return [c.x, c.z]; }, uf, n:group.children.length, bb:[mnx, mxx, mnz, mxz], map:ringUf().map((u, i) => u + ':' + BORDER_RINGS[i].length).join(' ') };
+  // cidades mais populosas do estado em destaque
+  const top = cities.filter(c => c.uf === uf && TOT(c)).sort((a, b) => TOT(b) - TOT(a) || b.cap - a.cap).slice(0, 5);
+  const tags = top.map((c, i) => { const e = document.createElement('div'); e.className = 'sttag' + (i ? '' : ' r1'); e.innerHTML = `<span class="rk">${i + 1}º</span>${html(c.name)} · ${TOT(c)} 🏠`; e.onclick = () => select(c.i); document.getElementById('labels').appendChild(e); return e; });
+  HL = { uf, group, top:top.map(c => c.i), tags }; document.body.classList.add('hlOn');
+  const bar = document.createElement('div'); bar.id = 'hlBar';
+  bar.innerHTML = `🔦 ${html(STATE[uf])} <button id="hlInfo">resumo</button><button id="hlGov">governo</button><button class="x" id="hlX">✕</button>`;
+  document.getElementById('app').appendChild(bar);
+  $('hlInfo').onclick = () => openStateCard(uf); $('hlGov').onclick = () => openGoverno(uf); $('hlX').onclick = clearHighlight;
+  if (fly && isFinite(mnx)) { const cx = (mnx + mxx) / 2, cz = (mnz + mxz) / 2, ext = Math.max(mxx - mnx, mxz - mnz); flyTo(new THREE.Vector3(cx, TOP, cz - ext * (innerWidth < 760 ? .3 : .2)), Math.max(14, ext * (innerWidth < 760 ? 3.6 : 2.6))); }
+}
+function drawStateTags() {
+  if (!HL) return; const r = canvas.getBoundingClientRect(), placed = [];
+  HL.tags.forEach((e, i) => { const c = cities[HL.top[i]]; v3.set(c.x, TOP + .15, c.z).project(camera);
+    if (v3.z > 1 || Math.abs(v3.x) > 1.1 || Math.abs(v3.y) > 1.1) { e.hidden = true; return; } e.hidden = false;
+    const x = (v3.x + 1) / 2 * r.width, w = e.offsetWidth || 120, h = (e.offsetHeight || 28) + 3; let y = (1 - v3.y) / 2 * r.height - 8;
+    for (let k = 0; k < 6; k++) { const hit = placed.find(p => Math.abs(p[0] - x) < (p[2] + w) / 2 && Math.abs(p[1] - y) < h); if (!hit) break; y = hit[1] - h; }
+    placed.push([x, y, w]); e.style.left = x + 'px'; e.style.top = y + 'px'; e.style.zIndex = 10 - i; });
+}
+window.__presReady = true; updatePresCard();
+
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <p>Ainda tem cidade no Brasil sem dono, e a sua pode ser uma delas. Estamos construindo um Brasil virtual (e, quem sabe, um mundo).</p>
   <ul class="rules">
-    <li><b>👆</b><span><b>Toque num estado</b> do mapa para ver os moradores, a cidade líder e o governador. <b>Toque numa cidade</b> (ou numa casa) para ver os @. Arraste com 1 dedo, zoom com 2 dedos. <a href="#" id="hTip">mostrar dica</a></span></li>
+    <li><b>👆</b><span><b>Toque num estado</b> do mapa para destacá-lo e ver as cidades mais populosas (e o resumo e o governo dele). <b>Toque numa cidade</b> (ou numa casa) para ver os @. Arraste com 1 dedo, zoom com 2 dedos. <a href="#" id="hTip">mostrar dica</a></span></li>
     <li><b>🏠</b><span>Comente no post de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> o nome da sua <b>cidade + estado + lado</b> e ganhe uma casa (Nv 1 · casinha) com o seu @. Ex.: "Macaé RJ 🔵", "Recife Pernambuco 🔴" ou "Goiânia GO ⚪ sem lado". Sem lado escolhido, você fica ⚪ e pode escolher depois, uma vez.</span></li>
     <li><b>🚩</b><span>O primeiro de cada cidade vira <b>fundador para sempre</b>.</span></li>
     <li><b>+5 💬</b><span>Cada comentário no post.</span></li>
