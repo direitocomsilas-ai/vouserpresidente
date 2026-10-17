@@ -2835,6 +2835,8 @@ function updateElecArrow() {
   if (!msg || !b || seen === key || !b.offsetParent) { arrowEl.hidden = true; return; }
   const r = b.getBoundingClientRect(), a = document.getElementById('app').getBoundingClientRect();
   arrowEl.querySelector('.bub').textContent = msg; arrowEl.style.left = (r.left + r.width / 2 - a.left) + 'px'; arrowEl.style.top = (r.top - a.top - 4) + 'px'; arrowEl.hidden = false;
+  const bub = arrowEl.querySelector('.bub'); bub.style.transform = ''; const br = bub.getBoundingClientRect(); let dx = 0;
+  if (br.right > a.right - 8) dx = a.right - 8 - br.right; if (br.left + dx < a.left + 8) dx = a.left + 8 - br.left; bub.style.transform = dx ? `translateX(${dx}px)` : '';
 }
 document.getElementById('cElec').addEventListener('click', () => { try { localStorage.setItem('vsp_arrow', elecClock().ed + '|' + arrowMsg()); } catch (e) {} arrowEl.hidden = true; });
 
