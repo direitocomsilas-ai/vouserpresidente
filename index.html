@@ -2066,6 +2066,7 @@ const NOISE = /^(responder|reply|ver traducao|see translation|ocultar respostas|
 const TIME = /^(ha\s+)?\d+\s*(s|seg|segundos?|min|m|h|horas?|d|dias?|sem|semanas?|w|a|anos?|y)(\s+atras)?$/;
 const HANDLE = /^@?([a-z0-9._]{2,30})$/, SEP = /^@?([a-z0-9._]{2,30})\s*[,;:\t|]\s*(.+)$/i, SP = /^@?([a-z0-9._]{2,30})\s+(.+)$/i;
 const isPlace = s => NAME_IDX.has(key(s));
+const TAG_PTS = 70; // marcar um amigo nos comentários
 function parseComments(text) {
   const out = []; let cur = null, orphan = 0, expect = false;
   for (let line of text.split(/\r?\n/)) {
@@ -2150,7 +2151,7 @@ function applyImport(entries, reset) {
       const q = players[e.user] || (players[e.user] = newP());
       if (wantsF && !q.followed && !q.claims.some(c => c.kind === 'seguir')) { q.claims.push({ kind:'seguir', t:Date.now() }); rep.claims.push([e.user, 'seguir']); act(e, '⏳ seguiu (você confirma)'); }
       if (wantsS && !q.claims.some(c => c.kind === 'story')) { q.claims.push({ kind:'story', t:Date.now() }); rep.claims.push([e.user, 'story']); act(e, '⏳ story +30 (você confirma)'); }
-      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); addPts(q, 3); rep.tags.push([e.user, m]); act(e, `+3 marcou @${m}`); } else act(e, `@${m} já marcado antes`); });
+      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); addPts(q, TAG_PTS); rep.tags.push([e.user, m]); act(e, `+${TAG_PTS} marcou amigo @${m}`); } else act(e, `@${m} já marcado antes`); });
     }
     // lado escrito num comentário sem cidade (ex.: "direita 🔵"): registra o lado da pessoa e pinta as casas dela que estavam ⚪
     if (!mc && side0 && side0 !== 'x') {
@@ -2183,7 +2184,7 @@ function applyImport(entries, reset) {
   for (const [u, m, ci, raw, e] of pend) {
     const p = players[u], tg = players[m], k = u + '|' + m + '|' + ci;
     if (credited.has(k)) continue;
-    if (!tg || !tg.casas.includes(ci)) continue; // amigo ainda sem casa na cidade: vale só o +3 de marcar
+    if (!tg || !tg.casas.includes(ci)) continue; // amigo ainda sem casa na cidade: vale só o +70 de marcar
     const r = sendInvite(u, m, ci);
     if (r === 'ok') { rep.pts++; act(e, `🤝 convite de aliança para @${m}`); } else if (r !== 'dup') ign(e, r);
   }
@@ -2376,8 +2377,9 @@ function runImport() {
     <div class="tw"><table><thead><tr><th></th><th>Quem</th><th>Comentário</th><th>O que vai acontecer</th></tr></thead><tbody>
     ${entries.map((e, i) => `<tr><td><input type="checkbox" data-pi="${i}" ${useful(e) ? 'checked' : ''}></td><td>@${html(e.user)}</td><td>${html(e.raw.slice(0, 70))}</td><td class="why">${e.acts.length ? e.acts.map(html).join('<br>') : 'nada (conversa)'}</td></tr>`).join('')}
     </tbody></table></div>
-    <div class="mrow"><button class="chip" id="pvAll">marcar todos</button><button class="chip" id="pvNone">desmarcar todos</button><span class="grow"></span><button class="chip y" id="pvGo">computar pontos</button></div></div>`;
+    <div class="mrow"><button class="chip" id="pvPdf">📄 exportar PDF</button><button class="chip" id="pvAll">marcar todos</button><button class="chip" id="pvNone">desmarcar todos</button><span class="grow"></span><button class="chip y" id="pvGo">computar pontos</button></div></div>`;
   const boxes = () => [...$('report').querySelectorAll('[data-pi]')];
+  $('pvPdf').onclick = () => exportImportPDF(entries, null);
   $('pvAll').onclick = () => boxes().forEach(b => b.checked = true);
   $('pvNone').onclick = () => boxes().forEach(b => b.checked = false);
   $('pvGo').onclick = () => { const sel2 = boxes().filter(b => b.checked).map(b => entries[+b.dataset.pi]); if (!sel2.length) { toast('Nenhum comentário marcado'); return; } computeImport([...quiet, ...sel2], reset, orphan, quiet.length); };
@@ -2408,11 +2410,35 @@ function computeImport(entries, reset, orphan, reps = 0) {
       ${ign.map(([u, c, w]) => `<tr><td>@${html(u)}</td><td>${html(c.slice(0, 60))}</td><td class="why">${html(w)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     <p style="margin:10px 0 0">${rep.dup ? `${rep.dup} comentário(s) repetiram cidade onde a pessoa já tinha casa. ` : ''}${rep.chatter ? `${rep.chatter} comentário(s) sem cidade foram ignorados. ` : ''}${orphan ? `${orphan} linha(s) sem autor identificado.` : ''}</p>
     ${rep.sups.length ? `<div class="sec"><h3>Apoios · +5 pontos para quem recebeu (${rep.sups.length})</h3><div class="ppl">${rep.sups.slice(0, 60).map(([u, m, k3]) => `<span class="pp">@${html(u)} 👍 @${html(m)} · ${KIND[k3 || 'pres']}</span>`).join('')}</div></div>` : ''}
-    ${rep.tags.length ? `<div class="sec"><h3>Quem marcou amigo · +3 pontos por amigo (${rep.tags.length})</h3><div class="ppl">${rep.tags.slice(0, 60).map(([u, m]) => `<span class="pp">@${html(u)} → @${html(m)}</span>`).join('')}</div></div>` : ''}
+    ${rep.tags.length ? `<div class="sec"><h3>Quem marcou amigo · +70 pontos por amigo (${rep.tags.length})</h3><div class="ppl">${rep.tags.slice(0, 60).map(([u, m]) => `<span class="pp">@${html(u)} → @${html(m)}</span>`).join('')}</div></div>` : ''}
     ${claimsHTML()}
-    <div class="mrow"><button class="chip" id="seeMap">ver no mapa antes</button><span class="grow"></span><button class="chip y" id="pubNow">publicar para todos</button></div>
+    <div class="mrow"><button class="chip" id="seeMap">ver no mapa antes</button><button class="chip" id="impPdf">📄 exportar PDF</button><span class="grow"></span><button class="chip y" id="pubNow">publicar para todos</button></div>
     <p class="note">Por enquanto só você está vendo. Ao publicar, todo mundo que abrir o link vê o mapa novo.</p>`;
   $('seeMap').onclick = closeModal; $('pubNow').onclick = publishAll; wireClaims();
+  $('impPdf').onclick = () => exportImportPDF(entries, rep);
+}
+// ---------- Dono: exportar a colagem de comentários em PDF (janela de impressão → "Salvar como PDF") ----------
+function exportImportPDF(entries, rep) {
+  const dt = new Date().toLocaleString('pt-BR'), esc = html;
+  const tags = rep ? rep.tags : entries.flatMap(e => e.acts.filter(a => /marcou amigo/.test(a)).map(a => [e.user, a.split('@')[1]]));
+  const tagBy = {}; tags.forEach(([u, m]) => (tagBy[u] = tagBy[u] || []).push(m));
+  const tiles = rep ? [['Comentários lidos', rep.read], ['Comentários novos (+5)', rep.cmt], ['Casas novas', rep.casas], ['Amigos marcados (+' + TAG_PTS + ')', rep.tags.length], ['Jogadores', rep.users.size], ['Não contaram', rep.ign.length + rep.dup]]
+    : [['Comentários', entries.length], ['Pessoas', new Set(entries.map(e => e.user)).size], ['Amigos marcados (+' + TAG_PTS + ')', tags.length]];
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><title>Comentarios ${esc(dt)}</title><style>
+    body{font:12px/1.35 Arial,sans-serif;color:#111;margin:18px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:18px 0 6px}
+    .t{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}.t div{border:1.5px solid #111;border-radius:8px;padding:6px 10px}.t b{display:block;font-size:16px}
+    table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:4px 6px;text-align:left;vertical-align:top}th{background:#ffd23f}tr{page-break-inside:avoid}
+    .g{color:#0a7a36;font-weight:bold}</style></head><body>
+    <h1>Vou Ser Presidente · comentários ${rep ? 'computados' : '(prévia)'}</h1><div>${esc(dt)}</div>
+    <div class="t">${tiles.map(([k, v]) => `<div>${esc(k)}<b>${fmt(v)}</b></div>`).join('')}</div>
+    ${tags.length ? `<h2>Marcou amigo · +${TAG_PTS} pontos por amigo</h2><table><tr><th>Quem marcou</th><th>Amigos</th><th>Pontos</th></tr>${Object.entries(tagBy).map(([u, ms]) => `<tr><td>@${esc(u)}</td><td>${ms.map(m => '@' + esc(m)).join(', ')}</td><td class="g">+${ms.length * TAG_PTS}</td></tr>`).join('')}</table>` : ''}
+    <h2>Todos os comentários</h2><table><tr><th>#</th><th>Quem</th><th>Comentário</th><th>Resultado</th></tr>
+    ${entries.map((e, i) => `<tr><td>${i + 1}</td><td>@${esc(e.user)}</td><td>${esc(e.raw)}</td><td>${e.acts.length ? e.acts.map(esc).join('<br>') : 'conversa'}</td></tr>`).join('')}</table>
+    </body></html>`;
+  const fr = document.createElement('iframe'); fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0'; document.body.appendChild(fr);
+  fr.contentDocument.open(); fr.contentDocument.write(doc); fr.contentDocument.close();
+  setTimeout(() => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { const w = window.open('', '_blank'); if (w) { w.document.write(doc); w.document.close(); w.print(); } } setTimeout(() => fr.remove(), 60000); }, 300);
+  toast('Escolha "Salvar como PDF" na janela de impressão');
 }
 // ---------- Dono: remover jogador (ex.: @ lido errado na colagem) ----------
 function removePlayer(h) {
@@ -2666,7 +2692,7 @@ function openRanking() {
   const pres = ['b', 'r', 'n'].filter(sd => sd !== 'n' || presidents.n).map(sd => presidents[sd] ? `<button class="pp go" data-h="${html(presidents[sd][0])}">${sideEmo(sd)} ${html(showH(presidents[sd][0]))} · ${presidents[sd][1]} pts</button>` : `<span class="pp">${sideEmo(sd)} vaga</span>`).join('');
   openModal(`<h2>Ranking</h2>
     <div class="sec"><h3>🏛️ Presidentes (quem mais pontua no Brasil, um de cada lado)</h3><div class="ppl">${pres}</div></div>
-    <p style="margin-top:10px">Quem mais pontua no mandato governa. Comentar +5 · marcar amigo +3 · story marcando @vouserpresidente +30. Os pontos do mandato zeram domingo às 21h; os pontos de nível da casa continuam. Toque num nome para ver o perfil.</p>
+    <p style="margin-top:10px">Quem mais pontua no mandato governa. Comentar +5 · marcar amigo +70 · story marcando @vouserpresidente +30. Os pontos do mandato zeram domingo às 21h; os pontos de nível da casa continuam. Toque num nome para ver o perfil.</p>
     ${rows.length ? `<div class="tw"><table><thead><tr><th>#</th><th>Jogador</th><th>Casa</th><th>Casas</th><th>Mandato</th><th>Pontos</th></tr></thead><tbody>
       ${rows.map(([h, p], i) => `<tr><td>${i + 1}</td><td><button class="chip" style="font-size:14px;padding:3px 10px;box-shadow:none;border-width:2px" data-h="${html(h)}">${html(showH(h))} ${sideEmo(p.side)}</button> <a class="igmini" href="${igUrl(h)}" target="_blank" rel="noopener" aria-label="Instagram de ${html(showH(h))}"><span class="igi" aria-hidden="true"></span></a></td><td>${lvImg(levelOf(p))} Nv ${levelOf(p)}</td><td>${p.casas.length}</td><td><b>${wkOf(p)}</b></td><td>${scoreOf(p)}</td></tr>`).join('')}
     </tbody></table></div>` : '<p>Ainda não há jogadores com casa. Cole os comentários de um post ou conquiste uma casa.</p>'}
@@ -3092,7 +3118,7 @@ async function openConta_() {
         <button class="act" id="aCasa" style="background:#fff"><span>📍 Ver minha casa</span><small>${html(c.name)}</small></button>
         <button class="act" id="aPerf" style="background:#fff"><span>👤 Meu perfil completo</span><small>nível e cargos</small></button>
         <button class="act" id="aFol" style="background:#fff"><span>⭐ Segui / postei story</span><small>+15 · +30</small></button>
-        <button class="act" id="aAli" style="background:#fff"><span>🤝 Convidar aliado</span><small>+3 por amigo</small></button>
+        <button class="act" id="aAli" style="background:#fff"><span>🤝 Convidar aliado</span><small>+70 por amigo</small></button>
         <button class="act" id="aRank" style="background:#fff"><span>🏆 Ranking</span><small>${rk ? '#' + rk[0] : ''}</small></button>
         <button class="act" data-biz="1" style="background:#fff"><span>🏪 Meu negócio</span><small>no mapa</small></button>
         <button class="act" id="aMiss" style="background:#fff"><span>💸 Missões</span><small>caçar no mapa</small></button>
@@ -3594,7 +3620,7 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
     <li><b>🏠</b><span>Comente no post de <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> o nome da sua <b>cidade + estado + lado</b> e ganhe uma casa (Nv 1 · casinha) com o seu @. Ex.: "Macaé RJ 🔵", "Recife Pernambuco 🔴" ou "Goiânia GO ⚪ sem lado". Sem lado escolhido, você fica ⚪ e pode escolher depois, uma vez.</span></li>
     <li><b>🚩</b><span>O primeiro de cada cidade vira <b>fundador para sempre</b>.</span></li>
     <li><b>+5 💬</b><span>Cada comentário no post.</span></li>
-    <li><b>+3 👥</b><span>Cada amigo que você marcar (vale uma vez por amigo).</span></li>
+    <li><b>+70 👥</b><span>Cada amigo que você marcar (vale uma vez por amigo).</span></li>
     <li><b>+30 📲</b><span>Story marcando <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> (a página confere e confirma).</span></li>
     <li><b>+5 🗳️</b><span>Cada voto (apoio) que você recebe: abra o perfil de alguém, toque em "apoiar" e coloque seu @ (presidente: qualquer um; governador: mesmo estado; prefeito: mesma cidade).</span></li>
     <li><b>📈</b><span>Quanto mais pontos, <b>maior a casa</b>: de casinha a arranha-céu (veja "níveis").</span></li>
