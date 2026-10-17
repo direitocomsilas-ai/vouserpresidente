@@ -2857,12 +2857,15 @@ cCss.textContent = `.ac-hd{display:flex;align-items:center;gap:10px;border:2px s
 .ac-r{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-weight:800;font-size:14px}.ac-r .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.ac-r small{display:block;color:var(--muted);font-weight:700;white-space:normal}
 .ac-r .chip{font-size:13px;padding:3px 10px;box-shadow:0 2px 0 var(--ink)}.ptag{display:inline-block;border:2px solid var(--ink);border-radius:8px;padding:0 6px;font:900 11px var(--body);vertical-align:2px}
 .ac-cores{display:flex;gap:6px;flex-wrap:wrap}.ac-cores button{width:30px;height:30px;border-radius:50%;border:2px solid var(--ink);cursor:pointer}.ac-cores button.on{outline:3px solid var(--ink);outline-offset:2px}
-#cConta .bdg{display:inline-grid;place-items:center;min-width:19px;height:19px;border-radius:99px;background:var(--red);color:#fff;font:900 11px var(--body);margin-left:5px;padding:0 4px}`;
+#cConta{position:absolute;z-index:6;top:max(12px,env(safe-area-inset-top,0px));left:max(16px,env(safe-area-inset-left,0px));height:46px;display:inline-flex;align-items:center;gap:6px;border:3px solid var(--ink);border-radius:99px;background:var(--paper);padding:0 16px 0 10px;font-family:var(--display);font-size:17px;cursor:pointer;box-shadow:0 4px 0 var(--ink);white-space:nowrap}
+#cConta:hover{background:var(--sun)}#cConta:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}#cConta .ai{font-size:20px;line-height:1}
+#cConta .bdg{position:absolute;top:-8px;right:-8px;display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:99px;background:var(--red);color:#fff;font:900 11px var(--body);padding:0 4px;border:2px solid var(--ink)}
+@media (max-width:760px){#cConta{left:auto;right:calc(max(16px,env(safe-area-inset-right,0px)) + 48px);width:40px;height:40px;padding:0;justify-content:center;background:var(--paper)}#cConta .t{display:none}#cConta .ai{font-size:19px}}`;
 document.head.appendChild(cCss);
 const withT = (pr, ms = 6000) => Promise.race([pr, new Promise(r => setTimeout(() => r({ error:{ message:'timeout' }, data:null }), ms))]);
 const accMsg = (el, ok, t) => { el.style.color = ok ? '#1f9d55' : 'var(--red)'; el.textContent = t; };
-function openConta() { try { return ME && players[ME] ? openConta_() : openLogin(); } catch (e) { console.error('CONTA', e); } }
-function openLogin(msg) {
+function openConta() { try { return ME && players[ME] ? openConta_() : openAcctLogin(); } catch (e) { console.error('CONTA', e); } }
+function openAcctLogin(msg) {
   openModal(`<h2>👤 Minha conta</h2>
     <p>Para entrar, é só colocar o seu <b>@ do Instagram</b> que já tem casa no mapa. Na sua área você <b>pede apoio</b> a outros @, <b>recebe pedidos</b> e, com apoio aceito, <b>cria o seu partido</b>.</p>
     <div class="el-f"><input id="acH" placeholder="seu @" autocomplete="off" autocapitalize="none" value="${html(ME)}"><button class="chip y" id="acGo">entrar</button></div>
@@ -2914,7 +2917,7 @@ async function openConta_() {
     ${PARTIDOS.length ? `<div class="sec"><h3>Partidos criados pelos jogadores</h3>${lista}</div>` : ''}
     <p class="note" style="margin-top:10px">Pedido de apoio não é voto: o voto acontece na eleição de sábado/domingo. Tudo aqui é de brincadeira, sem ligação com partidos reais.</p>`;
   const mc = $('mcard'); $('mx').onclick = closeModal;
-  $('acOut').onclick = () => { ME = ''; try { localStorage.removeItem('vsp_me'); } catch (e) {} contaBadge(); openLogin(); };
+  $('acOut').onclick = () => { ME = ''; try { localStorage.removeItem('vsp_me'); } catch (e) {} contaBadge(); openAcctLogin(); };
   $('acCasa').onclick = () => { closeModal(); select(ci, ME); popHandle(ci, ME, 3); };
   $('apGo').onclick = async () => {
     const t = cleanE($('apH').value), m = $('apMsg');
@@ -2950,9 +2953,9 @@ async function contaBadge() {
   const b = document.getElementById('cConta'); if (!b) return;
   let n = 0;
   if (ME && sb) { const { count, error } = await withT(sb.from('vsp_apoio').select('id', { count:'exact', head:true }).eq('to_h', ME).eq('status', 'pendente')); if (!error) n = count || 0; }
-  b.innerHTML = (ME ? '👤 @' + html(ME.length > 14 ? ME.slice(0, 13) + '…' : ME) : '👤 minha conta') + (n ? `<span class="bdg">${n}</span>` : '');
+  b.innerHTML = '<span class="ai">👤</span><span class="t">' + (ME ? '@' + html(ME.length > 14 ? ME.slice(0, 13) + '…' : ME) : 'minha conta') + '</span>' + (n ? `<span class="bdg">${n}</span>` : '');
 }
-{ const cb = document.createElement('button'); cb.className = 'chip'; cb.id = 'cConta'; cb.textContent = '👤 minha conta'; cb.onclick = openConta; $('cElec').before(cb); }
+{ const cb = document.createElement('button'); cb.className = 'acct'; cb.id = 'cConta'; cb.setAttribute('aria-label', 'Minha conta'); cb.innerHTML = '<span class="ai">👤</span><span class="t">minha conta</span>'; cb.onclick = openConta; $('app').appendChild(cb); }
 if (!window.__STATE) { loadPartidos(); contaBadge(); setInterval(contaBadge, 120000); }
 addEventListener('resize', updateElecArrow); setTimeout(updateElecArrow, 2500);
 
