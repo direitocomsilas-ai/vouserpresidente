@@ -3422,6 +3422,7 @@ const msCss = document.createElement('style');
 msCss.textContent = `.misstag{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;cursor:pointer;z-index:4;border:3px solid var(--ink);border-radius:99px;background:linear-gradient(180deg,#ffe27a,#ffc93c);padding:4px 11px;font:900 14px var(--body);color:var(--ink);box-shadow:0 4px 0 var(--ink),0 0 14px rgba(255,201,60,.9);white-space:nowrap;animation:msBob 1.4s ease-in-out infinite}
 .misstag:active{transform:translate(-50%,-100%) scale(.94)}@keyframes msBob{0%,100%{margin-top:0}50%{margin-top:-7px}}`;
 document.head.appendChild(msCss);
+window.__missSet = (L, sal) => { MISS = L; if (sal) SALDO = new Map(Object.entries(sal)); updateMissChip(); }; // vídeos e testes
 updateMissChip();
 if (!window.__STATE) { loadMiss(); setInterval(loadMiss, 45000); }
 
