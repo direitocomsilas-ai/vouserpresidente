@@ -728,8 +728,8 @@ function officials(ci) {
     .sort((a, b) => wkOf(players[b]) - wkOf(players[a]) || scoreOf(players[b]) - scoreOf(players[a]) || ((c.f === b) - (c.f === a)) || arr(a) - arr(b))
     .map(h => [h, wkOf(players[h])]);
   const eP = elected('pref:' + ci), eV = elected('ver:' + ci);
-  if (eP.length || eV.length) { const wk = h => [h, wkOf(players[h])]; return { pref:eP.length ? wk(eP[0].h) : null, ver:eV.map(x => wk(x.h)).slice(0, 10), eleito:true }; }
-  return { pref:L[0] || null, ver:L.slice(1, 11) };
+  const wk = h => [h, wkOf(players[h])];
+  return { pref:eP.length ? wk(eP[0].h) : null, ver:eV.map(x => wk(x.h)).slice(0, 10), eleito:true, lider:L[0] || null };
 }
 function rolesOf(h) {
   const out = [];
@@ -783,6 +783,7 @@ function rebuildAll() {
   const electGov = elect;
   Object.entries(byUf).forEach(([uf, L]) => { L.sort(electGov); if (L[0]) OFF.gov[uf] = L[0][0]; if (L[1]) OFF.sen[uf] = L[1][0]; OFF.dep[uf] = L.slice(2, 4).map(e => e[0]); });
   // títulos ganhos na eleição (com posse) valem mais que o ranking de pontos
+  presidents = { b:null, r:null, n:null }; OFF = { gov:{}, sen:{}, dep:{} }; // cargos vêm só da eleição da semana
   { const ep = elected('pres:BR'); if (ep.length) { const p = players[ep[0].h]; presidents = { b:null, r:null, n:null }; presidents[p.side || 'n'] = [ep[0].h, wkOf(p)]; } }
   Object.keys(STATE).forEach(uf => { const g = elected('gov:' + uf), s2 = elected('sen:' + uf), d2 = elected('dep:' + uf); if (g.length) OFF.gov[uf] = g[0].h; if (s2.length) OFF.sen[uf] = s2[0].h; if (d2.length) OFF.dep[uf] = d2.map(x => x.h); });
   HIGHSET = new Set([...Object.values(presidents).filter(Boolean).map(x => x[0]), ...Object.values(OFF.gov), ...Object.values(OFF.sen), ...Object.values(OFF.dep).flat()]);
@@ -1462,7 +1463,7 @@ function renderHUD() {
     let bn = document.getElementById('bn'); if (!bn) { bn = document.createElement('i'); bn.id = 'bn'; bn.style.background = '#9aa3b2'; $('bb').after(bn); }
     $('bb').style.width = fb + '%'; bn.style.width = fn + '%'; $('br').style.width = fr + '%';
     $('natB').textContent = `🔵 ${Math.round(fb)}%`; $('natR').textContent = `${Math.round(fr)}% 🔴${N ? ` · ⚪ ${Math.round(fn)}%` : ''}`; }
-  $('pres').innerHTML = ['b', 'r', 'n'].filter(sd => sd !== 'n' || presidents.n).map(sd => `<span class="${sd}">🏛️ ${sideEmo(sd)} ${presidents[sd] ? html(showH(presidents[sd][0])) + ` · ${presidents[sd][1]} pts` : 'presidência vaga'}</span>`).join('');
+  $('pres').innerHTML = ['b', 'r', 'n'].filter(sd => sd !== 'n' || presidents.n).map(sd => `<span class="${sd}">🏛️ ${sideEmo(sd)} ${presidents[sd] ? html(showH(presidents[sd][0])) + ' · eleito(a)' : 'presidência vaga · eleição sábado'}</span>`).join('');
   if (active.length && /vazio/.test($('ticker').textContent)) log('Comente no post do @vouserpresidente: CIDADE + ESTADO + 🔵 direita, 🔴 esquerda ou ⚪ sem lado');
   renderBoard(B, R);
   renderPop();
@@ -1560,8 +1561,8 @@ function renderBoard(B, R) {
     <div class="sides"><div class="b"><small>🔵 Direita</small><b>${fmt(nb)}</b></div><div class="r"><small>🔴 Esquerda</small><b>${fmt(nr)}</b></div><div class="n"><small>⚪ Sem lado</small><b>${fmt(nn)}</b></div></div>
     <div class="hide-p">
     <button class="elec" id="elecEl">${elecLine()}</button><div class="mand" id="mandEl">${mandText()}</div>
-    <h4>Presidente até agora · quem mais pontua</h4>
-    ${pr ? `<button class="pres" data-h="${html(pr[0])}">🏛️ ${sideEmo(players[pr[0]].side)} ${html(showH(pr[0]))}</button>` : '<p class="note" style="margin:0 0 8px">Ninguém ainda: comente e seja o primeiro!</p>'}
+    <h4>Presidente eleito · mandato da semana</h4>
+    ${pr ? `<button class="pres" data-h="${html(pr[0])}">🏛️ ${sideEmo(players[pr[0]].side)} ${html(showH(pr[0]))}</button>` : '<p class="note" style="margin:0 0 8px">Vago: a eleição é no sábado (candidaturas 12h–19h)</p>'}
     <h4>Top cidades <button class="pp go" id="bdAll" style="font-size:10.5px;padding:0 6px;margin-left:4px">ver todas</button></h4>
     ${top.length ? `<ol>${top.map((c, i) => `<li><button data-ci="${c.i}"><span class="n">${i + 1}</span><span class="c">${html(c.name)} - ${c.uf}</span><small>${domSide(c) ? sideEmo(domSide(c)) : '⚖️'} ${fmt(TOT(c))}</small></button></li>`).join('')}</ol>` : '<p class="note" style="margin:0">Nenhuma cidade fundada ainda.</p>'}
     </div>`;
@@ -1639,8 +1640,8 @@ function renderPanel() {
       <div class="tile"><span>Honestidade</span><b>${inf.hon}/100</b><div class="meter"><i style="width:${inf.hon}%"></i></div></div>
     </div>
     <div class="sec grid">
-      <div><h3>Prefeito</h3>${off.pref ? `<button class="pp go" data-h="${html(off.pref[0])}"><span class="dot ${players[off.pref[0]].side}"></span>${html(showH(off.pref[0]))} · ${off.pref[1]} pts${off.pref[0] === cities[sel].f ? ' · fundador' : ''}</button>` : '<span class="note">Vago. O fundador vira prefeito; depois, quem tiver mais alianças aceitas assume.</span>'}</div>
-      <div><h3>Câmara · 10 vagas</h3><div class="camara">${Array.from({ length:10 }, (_, k) => off.ver[k] ? `<button class="dot ${players[off.ver[k][0]].side} seat" data-h="${html(off.ver[k][0])}" title="${html(showH(off.ver[k][0]))} · ${off.ver[k][1]} pts" aria-label="Vereador ${html(showH(off.ver[k][0]))}"></button>` : '<span class="dot empty" title="Vaga"></span>').join('')}</div><span class="note">${off.ver.length}/10 · os que mais pontuam depois do prefeito</span></div>
+      <div><h3>Prefeito</h3>${off.pref ? `<button class="pp go" data-h="${html(off.pref[0])}"><span class="dot ${players[off.pref[0]].side}"></span>${html(showH(off.pref[0]))} · ${off.pref[1]} pts${off.pref[0] === cities[sel].f ? ' · fundador' : ''}</button>` : `<span class="note">Vago até a próxima eleição (sábado 12h).${cities[sel].f ? ` Fundador para sempre: ${html(showH(cities[sel].f))}.` : ''}</span>`}</div>
+      <div><h3>Câmara · 10 vagas</h3><div class="camara">${Array.from({ length:10 }, (_, k) => off.ver[k] ? `<button class="dot ${players[off.ver[k][0]].side} seat" data-h="${html(off.ver[k][0])}" title="${html(showH(off.ver[k][0]))} · ${off.ver[k][1]} pts" aria-label="Vereador ${html(showH(off.ver[k][0]))}"></button>` : '<span class="dot empty" title="Vaga"></span>').join('')}</div><span class="note">${off.ver.length}/10 · eleitos no sábado · mandato de 1 semana</span></div>
     </div>
     ${landmarkHtml(sel)}
     ${playersHere(sel)}
@@ -1899,7 +1900,7 @@ function applyImport(entries, reset) {
     credited.clear();
   }
   enforceOneHouse();
-  const rep = { read:entries.length, casas:0, pts:0, dup:0, chatter:0, ign:[], users:new Set(), touched:new Map(), claims:[], tags:[], sups:[], cmt:0 };
+  const rep = { votes:[], read:entries.length, casas:0, pts:0, dup:0, chatter:0, ign:[], users:new Set(), touched:new Map(), claims:[], tags:[], sups:[], cmt:0 };
   const pend = [], accepts = [];
   rep.acc = 0;
   const act = (e, x) => (e.acts = e.acts || []).push(x);
@@ -1917,6 +1918,8 @@ function applyImport(entries, reset) {
       continue;
     }
     const sm = full.match(/(^|[^a-z])(apoio|apoiado|apoiando|apoiei|voto em|voto no|voto na|meu voto (e|eh|vai pra|vai para|pro|pra|para))\s*@([a-z0-9._]{2,30})/);
+    // na votação (sáb 19h–dom 21h), "eu apoio @fulano" também vira voto na urna para o cargo que o @ disputa
+    if (sm && typeof elecClock === 'function' && elecClock().fase === 'votacao' && e.user !== sm[4]) { rep.votes.push([e.user, sm[4]]); act(e, `🗳️ voto em @${sm[4]} (vai para a urna)`); }
     if (sm) { const k = /prefeit/.test(t) ? 'pref' : /governad/.test(t) ? 'gov' : 'pres', r = applySupport(e.user, sm[4], k); if (r === 'ok') { rep.sups.push([e.user, sm[4], k]); act(e, `👍 +5 para @${sm[4]} (${KIND[k].toLowerCase()})`); } else ign(e, r); continue; }
     // time do coração → cadeira na arquibancada do Maracanã (o nome do time não conta como cidade nem lado)
     const tm = parseTeam(raw);
@@ -2165,6 +2168,7 @@ function runImport() {
 }
 function computeImport(entries, reset, orphan, reps = 0) {
   const rep = applyImport(entries, reset);
+  if (rep.votes.length) castCommentVotes(rep.votes);
   rep.read = Math.max(0, rep.read - reps);
   $('impReset').checked = false;
   refresh();
@@ -2515,7 +2519,9 @@ function elecLine() {
   return `${f} · ${what} em ${dur(t - k.now)}`;
 }
 // títulos empossados: race → [{ h, party, ed, n }]
-function elected(race) { return (TITLES[race] || []).filter(x => players[x.h]); }
+// o título vale só para a semana (até sair o resultado da eleição seguinte); só o fundador é permanente
+function validEd() { const k = elecClock(); if (k.fase === 'resultado' && k.now >= Date.UTC(+k.ed.slice(0, 4), +k.ed.slice(5, 7) - 1, +k.ed.slice(8, 10) + 1, 21)) return k.ed; const d = new Date(k.ed + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 7); return d.toISOString().slice(0, 10); }
+function elected(race) { const ve = validEd(); return (TITLES[race] || []).filter(x => players[x.h] && x.ed === ve); }
 // banco
 async function dbCands(ed, all) {
   if (!sb) return [];
@@ -2544,7 +2550,8 @@ function elecHead(k) {
   return `<h2>🗳️ Eleição da semana</h2><div class="el-ph">${ph.map(([f, t]) => `<span class="${k.fase === f ? 'on' : ''}">${t}</span>`).join('')}</div>
   <p>${elecLine()}. Cada @ pode se candidatar a <b>um</b> cargo por eleição e tem <b>1 voto em cada cargo</b>. Para presidente, a casa precisa ser nível ${PRES_MIN_LV}+. Quem ganha recebe o título quando a página confirma a posse.</p>`;
 }
-async function openElection() {
+async function openElection() { try { return await openElection_(); } catch (e) { console.error("ELEC", e && e.stack); } }
+async function openElection_() {
   const k = elecClock();
   openModal(elecHead(k) + '<p>Carregando…</p>', true);
   const mc = $('mcard'), head = () => `<button class="mx" id="mx" aria-label="Fechar">✕</button>` + elecHead(k);
@@ -2577,20 +2584,24 @@ async function openElection() {
   }
   const cands = await dbCands(k.ed), counts = await dbCounts(k.ed);
   const races = [...new Set(cands.map(c => raceKey(c.office, c.scope)))].sort((a, b) => OFF_ORDER.indexOf(a.split(':')[0]) - OFF_ORDER.indexOf(b.split(':')[0]) || a.localeCompare(b));
-  const raceHTML = (race, voteable, voted) => { const { list, win } = winners(race, cands, counts), done = k.fase === 'resultado', ws = new Set(win.map(x => x.h)), emp = new Set(elected(race).filter(x => x.ed === k.ed).map(x => x.h));
+  const raceHTML = (race, voteable, voted, me) => { const { list, win } = winners(race, cands, counts), done = k.fase === 'resultado', ws = new Set(win.map(x => x.h)), emp = new Set(elected(race).filter(x => x.ed === k.ed).map(x => x.h));
     return `<div class="el-race"><h4>${OFFICES[race.split(':')[0]].ic} ${html(raceName(race))}</h4>${list.map(c => `<div class="el-c ${done && ws.has(c.h) ? 'win' : ''}"><span class="dot ${c.side || 'n'}"></span><span class="nm">@${html(c.h)} <small>· ${html(c.party)}</small></span><span class="vt">${c.n}</span>${
-      done ? (ws.has(c.h) ? `<small>${emp.has(c.h) ? '🎖️ empossado' : '🏆 eleito · aguardando posse'}</small>` : '') : voteable ? (voted || c.h === h ? "" : `<button class="chip y" data-v="${race}|${c.h}">votar</button>`) : ''}</div>`).join('')}${voted && !done ? '<p class="note" style="margin:6px 0 0">✓ seu voto neste cargo já foi registrado</p>' : ''}</div>`; };
+      done ? (ws.has(c.h) ? `<small>${emp.has(c.h) ? '🎖️ empossado' : '🏆 eleito · aguardando posse'}</small>` : '') : voteable ? (voted || c.h === me ? "" : `<button class="chip y" data-v="${race}|${c.h}">votar</button>`) : ''}</div>`).join('')}${voted && !done ? '<p class="note" style="margin:6px 0 0">✓ seu voto neste cargo já foi registrado</p>' : ''}</div>`; };
   const render = (h, voted) => {
     const mine = h && players[h] ? races.filter(r => canVote(h, r)) : [];
     const rest = races.filter(r => !mine.includes(r));
     let body = '';
+    if (k.fase === 'resultado' && races.length) body += `<div class="sec"><h3>Ver quem ganhou</h3><div class="el-f"><input id="elV" placeholder="Coloque seu @ aqui" value="${html(h || '')}" autocomplete="off"><button class="chip y" id="elVGo">ver meu resultado</button></div><div class="el-msg" id="elMsg"></div></div>`;
     if (k.fase === 'votacao') body += `<div class="sec"><h3>Votar</h3><div class="el-f"><input id="elV" placeholder="Coloque seu @ aqui para votar" value="${html(h || '')}" autocomplete="off"><button class="chip y" id="elVGo">ver meus cargos</button></div><div class="el-msg" id="elMsg"></div></div>`;
     if (!races.length) body += `<p>${k.fase === 'votacao' ? 'Nenhuma candidatura aprovada nesta eleição.' : 'Ainda não houve votação nesta semana.'}</p>`;
-    if (mine.length) body += `<div class="sec"><h3>${k.fase === 'votacao' ? 'Seus cargos para votar' : 'Seus cargos'}</h3>${mine.map(r => raceHTML(r, k.fase === 'votacao', voted.has(r))).join('')}</div>`;
+    if (mine.length) body += `<div class="sec"><h3>${k.fase === 'votacao' ? 'Seus cargos para votar' : 'Seus cargos'}</h3>${mine.map(r => raceHTML(r, k.fase === 'votacao', voted.has(r), h)).join('')}</div>`;
     if (rest.length) body += `<div class="sec"><h3>${k.fase === 'votacao' ? 'Outras disputas (apuração ao vivo)' : 'Resultado'}</h3>${rest.slice(0, 40).map(r => raceHTML(r, false, false)).join('')}</div>`;
     mc.innerHTML = head() + body; bindX();
     const go = mc.querySelector('#elVGo');
-    if (go) go.onclick = async () => { const hh = cleanE($('elV').value); if (!hh) return; if (!players[hh] || !players[hh].casas.length) { $('elMsg').style.color = 'var(--red)'; $('elMsg').textContent = 'Esse @ não tem casa no mapa: só quem mora no jogo vota.'; return; } render(hh, await dbVoted(k.ed, hh)); };
+    if (go) go.onclick = async () => { const hh = cleanE($('elV').value); if (!hh) return; if (!players[hh] || !players[hh].casas.length) { $('elMsg').style.color = 'var(--red)'; $('elMsg').textContent = 'Esse @ não tem casa no mapa: só quem mora no jogo vota.'; return; } render(hh, await dbVoted(k.ed, hh));
+      if (k.fase === 'resultado') { const won = races.filter(r => winners(r, cands, counts).win.some(w => w.h === hh)); const m2 = $('elMsg');
+        if (won.length) { fireworks(); m2.style.color = '#1f9d55'; m2.innerHTML = `🎆 Parabéns, @${html(hh)}! Você venceu: <b>${won.map(r => html(raceName(r))).join(', ')}</b>. A posse sai quando a página confirmar.`; }
+        else if (m2) { m2.style.color = 'var(--muted)'; m2.textContent = `@${hh} não venceu nesta eleição. Sábado tem outra: candidate-se ao meio-dia!`; } } };
     mc.querySelectorAll('[data-v]').forEach(b => b.onclick = async () => {
       const [race, cand] = b.dataset.v.split('|');
       if (cand === h) { toast('Não dá para votar em si mesmo'); return; }
@@ -2627,7 +2638,55 @@ async function openElectionAdmin() {
 }
 { const eb = document.createElement('button'); eb.className = 'chip y'; eb.id = 'cElec'; eb.textContent = '🗳️ eleição'; eb.onclick = openElection; $('cRank').before(eb);
   const ad = document.createElement('button'); ad.className = 'chip'; ad.style.cssText = 'font-size:15px;padding:5px 14px'; ad.textContent = 'eleição (dono)'; ad.onclick = openElectionAdmin; $('adminRow').insertBefore(ad, $('pubBtn')); }
-setInterval(() => { const el = document.getElementById('elecEl'); if (el) el.textContent = elecLine(); }, 30000);
+setInterval(() => { const el = document.getElementById('elecEl'); if (el) el.textContent = elecLine(); updateElecArrow(); }, 30000);
+// votos vindos dos comentários "eu apoio @fulano" (o dono importa durante a votação)
+async function castCommentVotes(L) {
+  if (!L.length || !sb) return;
+  const k = elecClock(); if (k.fase !== 'votacao') { toast('Votos por comentário só contam durante a votação'); return; }
+  const cands = await dbCands(k.ed); let ok = 0, bad = 0;
+  for (const [voter, cand] of L) {
+    const c = cands.find(x => x.handle === cand); if (!c) { bad++; continue; }
+    const race = raceKey(c.office, c.scope);
+    if (voter === cand || !canVote(voter, race)) { bad++; continue; }
+    const { error } = await sb.from('vsp_votes').insert({ ed:k.ed, voter, race, cand }); if (error) bad++; else ok++;
+  }
+  log(`🗳️ Urna: ${ok} voto(s) por comentário${bad ? ` · ${bad} não valeram (não é candidato, fora da cidade/estado ou já votou)` : ''}`);
+  toast(`🗳️ ${ok} voto(s) dos comentários na urna`);
+}
+// fogos de artifício para quem ganhou
+function fireworks(ms = 4500) {
+  const cv = document.createElement('canvas'); cv.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:20';
+  document.getElementById('app').appendChild(cv); const W = cv.width = innerWidth, H = cv.height = innerHeight, g = cv.getContext('2d');
+  const P = [], cols = ['#ffc93c', '#2f6fec', '#e5484d', '#3ad17a', '#ffffff', '#ff8a1f', '#d6249f'], t0 = performance.now(); let last = 0;
+  const burst = () => { const x = W * (.15 + Math.random() * .7), y = H * (.12 + Math.random() * .4), c = cols[Math.floor(Math.random() * cols.length)];
+    for (let i = 0; i < 70; i++) { const a = Math.random() * 6.283, v = 2 + Math.random() * 5; P.push({ x, y, vx:Math.cos(a) * v, vy:Math.sin(a) * v, l:1, c }); } };
+  const step = now => { const el = now - t0; if (el < ms - 900 && now - last > 330) { burst(); last = now; }
+    g.fillStyle = 'rgba(0,0,0,0)'; g.clearRect(0, 0, W, H);
+    for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; p.x += p.vx; p.y += p.vy; p.vy += .07; p.vx *= .985; p.l -= .013; if (p.l <= 0) { P.splice(i, 1); continue; } g.globalAlpha = p.l; g.fillStyle = p.c; g.beginPath(); g.arc(p.x, p.y, 3.2, 0, 6.283); g.fill(); }
+    if (el < ms || P.length) requestAnimationFrame(step); else cv.remove(); };
+  burst(); requestAnimationFrame(step);
+}
+// seta lembrando: candidaturas abertas, votação aberta e resultado saiu
+const arrowEl = document.createElement('div'); arrowEl.id = 'elecArrow'; arrowEl.hidden = true;
+arrowEl.innerHTML = '<span class="bub"></span><span class="arr">⬇</span>';
+document.getElementById('app').appendChild(arrowEl);
+const aCss = document.createElement('style');
+aCss.textContent = `#elecArrow{position:absolute;z-index:8;transform:translate(-50%,-100%);text-align:center;pointer-events:none;animation:elb 1s ease-in-out infinite}
+#elecArrow .bub{display:block;background:var(--sun);border:3px solid var(--ink);border-radius:14px;box-shadow:0 3px 0 var(--ink);padding:6px 12px;font:900 13px var(--body);white-space:nowrap}
+#elecArrow .arr{display:block;font-size:34px;line-height:1;color:var(--sun);-webkit-text-stroke:2px var(--ink);margin-top:2px}
+@keyframes elb{50%{transform:translate(-50%,calc(-100% - 10px))}}
+#modal:not([hidden]) ~ #elecArrow{display:none}`;
+document.head.appendChild(aCss);
+function arrowMsg() { const k = elecClock(); if (k.fase === 'candidaturas') return '📝 Candidaturas abertas! Clique aqui'; if (k.fase === 'votacao') return '🗳️ Votação aberta! Clique aqui para votar'; const fim = Date.UTC(+k.ed.slice(0, 4), +k.ed.slice(5, 7) - 1, +k.ed.slice(8, 10) + 1, 21); return k.now >= fim && k.now < fim + 2 * 864e5 ? '🏆 Saiu o resultado! Veja quem ganhou' : ''; }
+function updateElecArrow() {
+  const msg = arrowMsg(), b = document.getElementById('cElec'), key = elecClock().ed + '|' + msg;
+  let seen = ''; try { seen = localStorage.getItem('vsp_arrow') || ''; } catch (e) {}
+  if (!msg || !b || seen === key || !b.offsetParent) { arrowEl.hidden = true; return; }
+  const r = b.getBoundingClientRect(), a = document.getElementById('app').getBoundingClientRect();
+  arrowEl.querySelector('.bub').textContent = msg; arrowEl.style.left = (r.left + r.width / 2 - a.left) + 'px'; arrowEl.style.top = (r.top - a.top - 4) + 'px'; arrowEl.hidden = false;
+}
+document.getElementById('cElec').addEventListener('click', () => { try { localStorage.setItem('vsp_arrow', elecClock().ed + '|' + arrowMsg()); } catch (e) {} arrowEl.hidden = true; });
+addEventListener('resize', updateElecArrow); setTimeout(updateElecArrow, 2500);
 
 $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
   <p>Ainda tem cidade no Brasil sem dono, e a sua pode ser uma delas. Estamos construindo um Brasil virtual (e, quem sabe, um mundo).</p>
@@ -2639,9 +2698,8 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
     <li><b>+30 📲</b><span>Story marcando <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> (a página confere e confirma).</span></li>
     <li><b>+5 🗳️</b><span>Cada voto (apoio) que você recebe: abra o perfil de alguém, toque em "apoiar" e coloque seu @ (presidente: qualquer um; governador: mesmo estado; prefeito: mesma cidade).</span></li>
     <li><b>📈</b><span>Quanto mais pontos, <b>maior a casa</b>: de casinha a arranha-céu (veja "níveis").</span></li>
-    <li><b>🏛️</b><span>Quem mais pontua governa. <b>Cidade:</b> prefeito + 10 vereadores. <b>Estado:</b> governador + 2 deputados federais. <b>Brasil:</b> Senado (1 senador por estado) e presidente de cada lado (🔵, 🔴 e ⚪).</span></li>
+    <li><b>🏛️</b><span>Os cargos são decididos na eleição. <b>Cidade:</b> prefeito + 10 vereadores. <b>Estado:</b> governador, senador e 2 deputados federais. <b>Brasil:</b> presidente. O mandato dura <b>1 semana</b> e termina quando sai o resultado da eleição seguinte. <b>Só o fundador da cidade é permanente.</b></span></li>
     <li><b>🗳️</b><span><b>Eleição toda semana</b> (botão "🗳️ eleição"): candidaturas no <b>sábado das 12h às 19h</b> (1 cargo por @, escolhendo um partido do jogo; para presidente a casa precisa ser nível 5). Às 19h sai a lista e abre a votação até <b>domingo 21h</b>: cada @ com casa tem <b>1 voto em cada cargo</b> (prefeito e vereador da sua cidade; governador, senador e deputado do seu estado; presidente). Quem vence recebe o título quando a página confirma a posse.</span></li>
-    <li><b>⬆️</b><span>Subiu de cargo? A vaga na sua cidade abre para o próximo da fila.</span></li>
     <li><b>⏳</b><span>Eleição todo domingo às 21h: os cargos vão para o histórico, os votos e os pontos do mandato reiniciam; os pontos de nível da sua casa continuam.</span></li>
     <li><b>⚽</b><span>Comente também o seu time e ganhe uma cadeira na arquibancada do Maracanã, no Rio.</span></li>
     <li><b>+15 ✅</b><span>Siga <a href="https://www.instagram.com/vouserpresidente/" target="_blank" rel="noopener">@vouserpresidente</a> (a página confere e confirma). Também garante sua casa; ache seu @ pelo link da bio.</span></li>
