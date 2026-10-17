@@ -359,7 +359,8 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 ph('B-renderer');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#a9d8f2');
+scene.background = new THREE.Color('#bfe3f5');
+scene.fog = new THREE.Fog('#bfe3f5', 400, 3000); // névoa leve: dá profundidade ao mapa inclinado
 const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 2500);
 const controls = new THREE.OrbitControls(camera, canvas);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
@@ -386,8 +387,8 @@ const toon = (c, o = {}) => new THREE.MeshToonMaterial(Object.assign({ color:c, 
 function waveTex() {
   const cv = document.createElement('canvas'); cv.width = cv.height = 256;
   const g = cv.getContext('2d');
-  g.fillStyle = '#2f8fd3'; g.fillRect(0, 0, 256, 256);
-  g.strokeStyle = 'rgba(255,255,255,.22)'; g.lineWidth = 3; g.lineCap = 'round';
+  g.fillStyle = '#6cb7e4'; g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 3; g.lineCap = 'round';
   for (let k = 0; k < 14; k++) {
     const x = hash(k, 5) * 256, y = hash(k, 9) * 256, w = 18 + hash(k, 2) * 22;
     g.beginPath(); g.moveTo(x - w / 2, y); g.quadraticCurveTo(x - w / 4, y - 6, x, y); g.quadraticCurveTo(x + w / 4, y + 6, x + w / 2, y); g.stroke();
@@ -448,7 +449,18 @@ function makeTerrain() {
   }
   const small = document.createElement('canvas'); small.width = small.height = G; small.getContext('2d').putImageData(img, 0, 0);
   ctx.save(); ring(BR); ctx.clip();
-  ctx.imageSmoothingEnabled = false; ctx.drawImage(small, 0, 0, TW, TW);
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(small, 0, 0, TW, TW);
+  // copas de árvores desenhadas na textura: floresta densa vista de cima (como maquete)
+  { const NT = LOWQ ? 26000 : 70000, TR = TW / 2048;
+    const CAN = { amazon:[.95, ['#1f6b45', '#2a7d50', '#24734a', '#2f8a58'], 4.2], mata:[.75, ['#3f8f3a', '#4a9c40', '#367f33'], 3.6], pantanal:[.25, ['#5e9f6e'], 3], cerrado:[.16, ['#7a8a3c', '#6c7d34'], 2.6], pampa:[.08, ['#6aa04a'], 2.6], caatinga:[.1, ['#8a8a6a', '#7b7b5c'], 2.4] };
+    for (let i = 0; i < NT; i++) {
+      const px = hash(i, 91) * TW, py = hash(i, 97) * TW, [lon, lat] = toLL(px, py), cfg = CAN[biome(lon, lat)];
+      if (!cfg || hash(i, 101) > cfg[0]) continue;
+      const r = cfg[2] * TR * (.7 + hash(i, 103) * .6), col = cfg[1][i % cfg[1].length];
+      ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.arc(px + r * .35, py + r * .35, r, 0, 6.283); ctx.fill();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, r, 0, 6.283); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.beginPath(); ctx.arc(px - r * .3, py - r * .3, r * .45, 0, 6.283); ctx.fill();
+    } }
   for (let i = 0; i < 18000; i++) {
     const px = hash(i, 7) * TW, py = hash(i, 13) * TW, [lon, lat] = toLL(px, py), bm = biome(lon, lat);
     if (bm === 'pantanal' && i % 3 === 0) {
@@ -1291,7 +1303,7 @@ function updateDots(d) {
   const r = Math.min(3, Math.max(.05, d * .0042)), hideActive = d < 150;
   for (const c of cities) {
     const tot = TOT(c);
-    let rr = tot ? r * (c.cap ? 1.7 : 1.35) : FREEVIEW ? r * (c.cap ? 1.2 : .55) : 0;
+    let rr = tot ? r * (.42 + Math.min(1, tot / 10) * .9) * (c.cap ? 1.25 : 1) : FREEVIEW ? r * (c.cap ? .9 : .4) : 0; // tamanho pela população
     if (hideActive && tot) rr = 0;
     m4.compose(p4.set(c.x, TOP + .035, c.z), q4, s4.set(rr, 1, rr)); dotIM.setMatrixAt(c.i, m4);
     m4.compose(p4.set(c.x, TOP + .02, c.z), q4, s4.set(rr, 1, rr)); rimIM.setMatrixAt(c.i, m4);
@@ -1337,9 +1349,9 @@ let poolCities = [], frameN = 0;
 // ---------- Câmera ----------
 function frameCamera() { const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', frameCamera); frameCamera();
-const fitDist = () => span * (camera.aspect < .8 ? 2.75 : 1.3);
+const fitDist = () => span * (camera.aspect < .8 ? 2.55 : 1.25);
 controls.maxDistance = span * 3.3;
-const TILT = .32;
+const TILT = .62; // mapa inclinado, como maquete 3D
 camera.position.copy(CENTER).add(new THREE.Vector3(0, Math.cos(TILT), Math.sin(TILT)).multiplyScalar(fitDist()));
 controls.target.copy(CENTER);
 let focus = null;
@@ -1555,7 +1567,8 @@ function loop(t) {
   if (dirty) { HM.forEach(m => m.instanceMatrix.needsUpdate = true); flagIM.instanceMatrix.needsUpdate = true; }
   if (!RM) clouds.forEach((g, i) => { g.position.x += .01 + i * .0015; if (g.position.x > minX + span + 15) g.position.x = minX - 15; });
   updateTraffic(t, d);
-  drawLabels(d); drawHouseLabel(); drawFanLabels(d); drawStateTags(); drawBizTags(d); drawMissions(d);
+  drawLabels(d); drawHouseLabel(); drawFanLabels(d); drawStateTags(); drawBizTags(d); drawMissions(d); updatePulses(t, d);
+  scene.fog.near = d * 1.15; scene.fog.far = d * 3.4;
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
@@ -3425,6 +3438,18 @@ document.head.appendChild(msCss);
 window.__missSet = (L, sal) => { MISS = L; if (sal) SALDO = new Map(Object.entries(sal)); updateMissChip(); }; // vídeos e testes
 updateMissChip();
 if (!window.__STATE) { loadMiss(); setInterval(loadMiss, 45000); }
+
+// ---------- Ondas de destaque: anéis amarelos pulsando nas maiores cidades (visão do Brasil) ----------
+const PULSE = []; { const g = new THREE.RingGeometry(.86, 1, 64); g.rotateX(-Math.PI / 2);
+  for (let i = 0; i < 24; i++) { const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color:'#ffd54a', transparent:true, opacity:0, depthWrite:false, fog:false })); m.renderOrder = 6; m.visible = false; scene.add(m); PULSE.push(m); } }
+let pulseTop = [], pulseT = -1e9;
+function updatePulses(t, d) {
+  if (t - pulseT > 2000) { pulseT = t; pulseTop = active.slice().sort((a, b) => TOT(cities[b]) - TOT(cities[a])).slice(0, 12); }
+  const on = d > 120 && !RM;
+  PULSE.forEach((m, i) => { const ci = pulseTop[i >> 1]; if (!on || ci === undefined) { m.visible = false; return; }
+    const c = cities[ci], ph = ((t / 2600) + (i & 1) * .5 + (i >> 1) * .137) % 1, R = d * (.008 + .034 * ph) * (1 + Math.min(1, TOT(c) / 12) * .6);
+    m.visible = true; m.position.set(c.x, TOP + .12, c.z); m.scale.setScalar(R); m.material.opacity = (1 - ph) * .75; });
+}
 
 // ======================= INTERFACE LIMPA (mapa em primeiro lugar) =======================
 const uiCss = document.createElement('style');
