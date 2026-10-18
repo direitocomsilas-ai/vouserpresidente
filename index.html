@@ -317,7 +317,7 @@ const credited = new Set();
 const COMMENTED = new Set();
 const ckey = (u, raw) => { let h = 5381; const t = u + '|' + norm(raw).replace(/\s+/g, ' ').trim(); for (let i = 0; i < t.length; i++) h = (h * 33 ^ t.charCodeAt(i)) >>> 0; return h.toString(36); };
 const newP = () => ({ at:{}, sup:[], wk:0, side:null, casas:[], pts:0, mob:{}, shared:0, followed:false, allies:[], reqIn:[], reqOut:[], claims:[], tagged:[], since:Date.now() });
-const fixP = p => { const d = newP(); if (p.wk === undefined) p.wk = p.pts || 0; for (const k in d) if (p[k] === undefined) p[k] = d[k]; p.sup = p.sup.map(x => typeof x === 'string' ? { f:x, k:'pres' } : x); p.claims = p.claims.map(c => c.kind === 'compartilhar' ? { kind:'story', t:c.t } : c); if (Array.isArray(p.shared)) p.shared = p.shared.length; return p; };
+const fixP = p => { const d = newP(); if (p.wk === undefined) p.wk = p.pts || 0; for (const k in d) if (p[k] === undefined) p[k] = d[k]; p.sup = p.sup.map(x => typeof x === 'string' ? { f:x, k:'pres' } : x); p.claims = p.claims.map(c => c.kind === 'compartilhar' ? { kind:'story', t:c.t } : c); if (Array.isArray(p.shared)) p.shared = p.shared.length; if (p.casas.length && !p.h10) { p.h10 = 1; p.pts += 10; } return p; };
 const showH = h => '@' + h;
 const igUrl = h => 'https://www.instagram.com/' + encodeURIComponent(h) + '/';
 const igLink = (h, label) => `<a class="ig" href="${igUrl(h)}" target="_blank" rel="noopener"><span class="igi" aria-hidden="true"></span>${label || 'abrir @' + h + ' no Instagram'}</a>`;
@@ -1910,7 +1910,7 @@ function addCloser(el, k) {
 }
 openBoardBtn.onclick = () => { FOLD.board = false; applyFold(); };
 openPopBtn.onclick = () => { FOLD.pop = false; applyFold(); };
-function refresh() { rebuildAll(); renderHUD(); if (window.__presReady) updatePresCard(); }
+function refresh() { rebuildAll(); renderHUD(); if (window.__presReady) updatePresCard(); if (window.__statsReady) updateStats(); }
 
 $('cBsb').onclick = () => select(BSB);
 
@@ -2161,6 +2161,9 @@ const TIME = /^(ha\s+)?\d+\s*(s|seg|segundos?|min|m|h|horas?|d|dias?|sem|semanas
 const HANDLE = /^@?([a-z0-9._]{2,30})$/, SEP = /^@?([a-z0-9._]{2,30})\s*[,;:\t|]\s*(.+)$/i, SP = /^@?([a-z0-9._]{2,30})\s+(.+)$/i;
 const isPlace = s => NAME_IDX.has(key(s));
 const TAG_PTS = 70; // marcar um amigo nos comentários
+// contadores por post (o post atual é o link salvo em POST): comentários e amigos marcados
+function postCtr(p) { const k = POST || 'post'; if (!p.cp || p.cp.k !== k) p.cp = { k, n:0, t:0, bz:[] }; return p.cp; }
+const BIZ_IG = () => new Set((typeof BIZ !== 'undefined' ? BIZ : []).filter(b => b.status === 'aprovado' || !b.status).map(b => String(b.insta || '').replace(/^@/, '').toLowerCase()).filter(Boolean));
 function parseComments(text) {
   const out = []; let cur = null, orphan = 0, expect = false;
   for (let line of text.split(/\r?\n/)) {
@@ -2222,7 +2225,9 @@ function applyImport(entries, reset) {
     if (!known.has(e.user)) { known.add(e.user); act(e, '🆕 @ novo no jogo (confira)'); }
     const raw = e.raw, full = norm(raw), t = full.replace(/@[a-z0-9._]+/g, ' ');
     // +5 por comentário (cada comentário conta uma vez, mesmo colando de novo)
-    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); addPts(pc, 5); rep.cmt++; rep.users.add(e.user); act(e, '+5 comentário'); } }
+    { const kk = ckey(e.user, raw); if (!COMMENTED.has(kk)) { COMMENTED.add(kk); const pc = players[e.user] || (players[e.user] = newP()); const cp = postCtr(pc);
+      if (!cp.n) { addPts(pc, 5); act(e, '+5 comentário no post'); } else if (cp.n <= 10) { addPts(pc, 1); act(e, `+1 comentário extra (${cp.n}/10)`); } else act(e, 'comentário extra (limite de 10 no post)');
+      cp.n++; rep.cmt++; rep.users.add(e.user); } }
     if (/(^|[^a-z])(aceito|aceita|aceitei|aceitamos|aceito alianca|recuso|recusei)([^a-z]|$)/.test(full) && /@[a-z0-9._]{2,30}/.test(full)) {
       const ok = !/(^|[^a-z])(recuso|recusei)([^a-z]|$)/.test(full);
       (full.match(/@[a-z0-9._]{2,30}/g) || []).forEach(m => accepts.push([e.user, m.slice(1), ok, raw, matchCity(raw), e]));
@@ -2245,7 +2250,8 @@ function applyImport(entries, reset) {
       const q = players[e.user] || (players[e.user] = newP());
       if (wantsF && !q.followed && !q.claims.some(c => c.kind === 'seguir')) { q.claims.push({ kind:'seguir', t:Date.now() }); rep.claims.push([e.user, 'seguir']); act(e, '⏳ seguiu (você confirma)'); }
       if (wantsS && !q.claims.some(c => c.kind === 'story')) { q.claims.push({ kind:'story', t:Date.now() }); rep.claims.push([e.user, 'story']); act(e, '⏳ story +30 (você confirma)'); }
-      mentions.forEach(m => { if (!q.tagged.includes(m)) { q.tagged.push(m); addPts(q, TAG_PTS); rep.tags.push([e.user, m]); act(e, `+${TAG_PTS} marcou amigo @${m}`); } else act(e, `@${m} já marcado antes`); });
+      mentions.forEach(m => { const cq = postCtr(q); if (BIZ_IG().has(m)) { cq.bz = cq.bz || []; if (!cq.bz.includes(m)) { cq.bz.push(m); addPts(q, 30); act(e, `+30 marcou o negócio @${m}`); } else act(e, `negócio @${m} já marcado neste post`); return; }
+        if (!q.tagged.includes(m)) { if ((cq.t || 0) >= 10) { act(e, `@${m}: limite de 10 amigos por post`); return; } cq.t = (cq.t || 0) + 1; q.tagged.push(m); addPts(q, TAG_PTS); rep.tags.push([e.user, m]); act(e, `+${TAG_PTS} marcou amigo @${m}`); } else act(e, `@${m} já marcado antes`); });
     }
     // lado escrito num comentário sem cidade (ex.: "direita 🔵"): registra o lado da pessoa e pinta as casas dela que estavam ⚪
     if (!mc && side0 && side0 !== 'x') {
@@ -2271,7 +2277,8 @@ function applyImport(entries, reset) {
     if (side0 === 'n') delete p.autoN;
     p.side = s; rep.users.add(e.user);
     if (p.casas.length && !p.casas.includes(ci)) { const c0 = cities[p.casas[0]]; ign(e, `só 1 casa por @: já mora em ${c0.name} - ${c0.uf}`); continue; }
-    if (!p.casas.includes(ci)) { p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); act(e, `🏠 casa em ${cities[ci].name} - ${cities[ci].uf}${cities[ci].f === e.user ? ' (fundador)' : ''}`); }
+    if (!p.casas.includes(ci)) { if (!p.h10) { p.h10 = 1; addPts(p, 10); act(e, '+10 primeira casa'); for (const [qh, q] of Object.entries(players)) if (qh !== e.user && q.tagged && q.tagged.includes(e.user) && !(q.rec || []).includes(e.user)) { (q.rec = q.rec || []).push(e.user); addPts(q, 25); act(e, `+25 para @${qh} (recrutou)`); } }
+      p.casas.push(ci); p.at[ci] = Date.now() + (arrivalSeq++); cities[ci][s]++; if (!cities[ci].f) cities[ci].f = e.user; rep.casas++; rep.touched.set(ci, (rep.touched.get(ci) || 0) + 1); act(e, `🏠 casa em ${cities[ci].name} - ${cities[ci].uf}${cities[ci].f === e.user ? ' (fundador)' : ''}`); }
     else { if (!e.quiet) rep.dup++; act(e, `já tinha casa em ${cities[ci].name}`); }
     mentions.forEach(m => pend.push([e.user, m, ci, raw, e]));
   }
@@ -3729,6 +3736,139 @@ $('helpBtn').onclick = () => openModal(`<h2>Como jogar</h2>
 // Início
 refresh();
 log(active.length ? 'Pesquise sua cidade ou seu @' : 'O mapa ainda está vazio: as cidades nascem quando as pessoas comentam no post oficial.');
+// ---------- Painel com abas (Minha casa · Ranking · Governo · Dados · Como jogar) + placar do topo ----------
+const OFF_TAG = { pres:['PRES', '#9b5cf6'], gov:['GOV', '#e5484d'], sen:['SEN', '#2f6fec'], dep:['DEP', '#f59e0b'], pref:['PREF', '#16a34a'], ver:['VER', '#0d9488'] };
+function officeOf(h) { for (const o of OFF_ORDER) for (const race of Object.keys(TITLES || {})) if (race.split(':')[0] === o && elected(race).some(x => x.h === h)) return o; return null; }
+const offTag = o => o ? `<span class="otag" style="background:${OFF_TAG[o][1]}">${OFF_TAG[o][0]}</span>` : '';
+function gameDay() { const v = Object.values(players).map(p => p.since).filter(x => x > 1.7e12); const t0 = v.length ? Math.min(...v) : Date.now(); const d0 = new Date(t0 - 3 * 3600e3), n = brNow(); return Math.max(1, Math.round((Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()) - Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate())) / 864e5) + 1); }
+function mapTotals() {
+  let casas = 0; const ufs = new Set(); active.forEach(ci => { casas += TOT(cities[ci]); ufs.add(cities[ci].uf); });
+  let pts = 0; Object.values(players).forEach(p => pts += p.pts || 0);
+  return { casas, cidades:active.length, ufs:ufs.size, pts };
+}
+{ const css = document.createElement('style'); css.textContent = `
+#stats{display:flex;align-items:center;gap:8px;justify-content:center;flex-wrap:nowrap}
+#stats .day{font-family:var(--display);font-size:15px;background:var(--sun);border:3px solid var(--ink);border-radius:99px;padding:3px 12px;box-shadow:0 3px 0 var(--ink);white-space:nowrap}
+#stats .sb{background:var(--paper);border:3px solid var(--ink);border-radius:14px;padding:2px 10px 3px;text-align:center;min-width:64px;box-shadow:0 3px 0 var(--ink);cursor:pointer}
+#stats .sb b{display:block;font-family:var(--display);font-weight:400;font-size:19px;line-height:1.05;font-variant-numeric:tabular-nums}
+#stats .sb small{display:block;font:900 9.5px var(--body);letter-spacing:.08em;color:var(--muted)}
+.otag{display:inline-block;color:#fff;font:900 11px var(--body);letter-spacing:.06em;border-radius:99px;padding:3px 9px;vertical-align:middle}
+.htabs{display:flex;gap:6px;overflow-x:auto;margin:0 40px 10px 0;padding-bottom:4px}
+.htabs button{flex:none;font-family:var(--display);font-size:14px;border:3px solid var(--ink);border-radius:14px;background:var(--paper);padding:5px 10px;cursor:pointer;color:var(--ink)}
+.htabs button[aria-selected="true"]{background:var(--ink);color:#fff}
+.seg{display:flex;gap:6px;margin:4px 0 10px}.seg button{flex:1;font-family:var(--display);font-size:15px;border:3px solid var(--ink);border-radius:99px;background:var(--paper);padding:6px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--sun)}
+.rk{display:grid;gap:8px}.rk .r{display:flex;align-items:center;gap:10px;border:2px solid var(--line);border-radius:16px;padding:8px 12px;background:#fff;cursor:pointer;text-align:left;font:inherit;width:100%;box-sizing:border-box;color:var(--ink)}
+.rk .r:hover{border-color:var(--ink)}.rk .pos{width:34px;height:34px;flex:none;border-radius:50%;border:3px solid var(--ink);display:grid;place-items:center;font-family:var(--display);font-size:16px;background:var(--line)}
+.rk .r:nth-child(1) .pos{background:var(--sun)}.rk .r:nth-child(2) .pos{background:#dfe3ea}.rk .r:nth-child(3) .pos{background:#f0b089}
+.rk .w{flex:1;min-width:0}.rk .w b{display:block;font-weight:900;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rk .w small{color:var(--muted);font-weight:800;font-size:12px}
+.rk .p{font-family:var(--display);font-size:20px;font-variant-numeric:tabular-nums}
+.big1{text-align:center;border:3px solid var(--ink);border-radius:20px;padding:12px;background:#fbfbf7}.big1 small{font-weight:900;color:var(--muted);font-size:12px;letter-spacing:.06em}
+.big1 b{display:block;font-family:var(--display);font-weight:400;font-size:52px;line-height:1.05;font-variant-numeric:tabular-nums}
+.rings{display:flex;justify-content:space-around;gap:8px;margin-top:8px}.ring{text-align:center;font-weight:800;font-size:12px;color:var(--muted);max-width:110px}
+.ring i{display:grid;place-items:center;width:84px;height:84px;margin:0 auto 6px;border-radius:50%;font:400 20px var(--display);color:var(--ink);font-style:normal}
+.lvg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.lvg div{border:2px solid var(--line);border-radius:14px;padding:6px;text-align:center}
+.lvg img{width:64px;height:64px}.lvg b{display:block;font-family:var(--display);font-weight:400;font-size:14px;line-height:1.1}.lvg span{font-size:11.5px;font-weight:800;color:var(--muted)}
+.ofl{display:grid;gap:10px}.ofl div{font-weight:700;font-size:13.5px;color:var(--muted)}.ofl b{color:var(--ink);font-size:15px}
+.ptl{display:grid;gap:8px;list-style:none;margin:0;padding:0}.ptl li{display:flex;gap:10px;align-items:center;font-weight:800;font-size:14px}
+.ptl em{font-style:normal;flex:none;min-width:48px;text-align:center;font-family:var(--display);font-size:17px;background:var(--sun);border:3px solid var(--ink);border-radius:12px;padding:3px 6px}
+@media (max-width:760px){#stats .sb{min-width:56px;padding:1px 8px 2px}#stats .sb b{font-size:16px}#stats .day{font-size:13px;padding:2px 9px}}`; document.head.appendChild(css); }
+const statsEl = document.createElement('div'); statsEl.id = 'stats';
+statsEl.innerHTML = '<span class="day" id="stDay">DIA 1</span><div class="sb" data-t="dados"><b id="stC">0</b><small>CASAS</small></div><div class="sb" data-t="dados"><b id="stI">0</b><small>CIDADES</small></div><div class="sb" data-t="dados"><b id="stU">0/27</b><small>ESTADOS</small></div>';
+document.querySelector('#top .ttl').after(statsEl);
+statsEl.querySelectorAll('.sb').forEach(b => b.onclick = () => openHub('dados'));
+function updateStats() { const T = mapTotals(); $('stDay').textContent = 'DIA ' + gameDay(); $('stC').textContent = fmt(T.casas); $('stI').textContent = fmt(T.cidades); $('stU').textContent = T.ufs + '/27'; }
+window.__statsReady = true; updateStats();
+
+let HUB = { tab:'rank', sc:'br', ci:-1, uf:'' };
+function openHub(tab, opt = {}) {
+  Object.assign(HUB, { tab }, opt);
+  const tabs = [['casa', '🏠 Minha casa'], ['rank', '🏆 Ranking'], ['gov', '🏛️ Governo'], ['dados', '📊 Dados'], ['como', '❓ Como jogar']];
+  const body = tab === 'casa' ? hubCasa() : tab === 'rank' ? hubRank() : tab === 'dados' ? hubDados() : tab === 'como' ? hubComo() : '';
+  if (tab === 'gov') { openGoverno(); return; }
+  openModal(`<div class="htabs" role="tablist">${tabs.map(([k, n]) => `<button role="tab" data-ht="${k}" aria-selected="${k === tab}">${n}</button>`).join('')}</div>${body}`, true);
+  const mc = $('mcard');
+  mc.querySelectorAll('[data-ht]').forEach(b => b.onclick = () => openHub(b.dataset.ht));
+  mc.querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
+  mc.querySelectorAll('[data-sc]').forEach(b => b.onclick = () => openHub('rank', { sc:b.dataset.sc }));
+  const cs = mc.querySelector('#rkCity'); if (cs) cs.onchange = () => openHub('rank', { sc:'city', ci:+cs.value });
+  const us = mc.querySelector('#rkUf'); if (us) us.onchange = () => openHub('rank', { sc:'uf', uf:us.value });
+  const go = (id, f) => { const b = mc.querySelector('#' + id); if (b) b.onclick = f; };
+  go('hcLogin', () => openAcctLogin()); go('hcConta', () => openConta()); go('hcMap', () => { closeModal(); const p = players[ME]; if (p && p.casas.length) select(p.casas[0], ME); });
+  go('hcJoin', () => { closeModal(); const b = $('addHouse'); if (b) b.click(); });
+  go('hdFold', () => { closeModal(); FOLD.board = FOLD.pop = !(FOLD.board && FOLD.pop); applyFold(); });
+  go('hdFree', () => { closeModal(); openFree(); }); go('hdCities', () => openCities());
+  go('hcRules', () => { $('helpBtn').__old(); });
+  go('hcElec', () => openElection());
+}
+function hubCasa() {
+  const p = ME && players[ME];
+  if (!ME) return `<h2>Minha casa</h2><p>Entre com o seu @ para ver sua casa, seu nível, seus pontos e seus cargos.</p><div class="acts"><button class="act" id="hcLogin"><span>🔑 Entrar com meu @</span><small>só o @, sem senha</small></button><button class="act" style="background:#fff" id="hcJoin"><span>🏠 Ainda não tenho casa</span><small>como ganhar</small></button></div>`;
+  if (!p || !p.casas.length) return `<h2>${html(showH(ME))}</h2><p>Você ainda não tem casa no mapa. Comente <b>sua cidade + estado</b> no post do @vouserpresidente para ganhar a sua.</p><div class="acts"><button class="act" id="hcJoin"><span>🏠 Quero minha casa</span><small>passo a passo</small></button><button class="act" style="background:#fff" id="hcConta"><span>👤 Minha conta</span><small>abrir</small></button></div>`;
+  const c = cities[p.casas[0]], lv = levelOf(p), sc = scoreOf(p), L = LEVELS[lv - 1], N = LEVELS[lv], prog = N ? Math.round((sc - L.min) / (N.min - L.min) * 100) : 100, o = officeOf(ME);
+  const city = c.list ? c.list.filter(x => x.h).sort((a, b) => scoreOf(players[b.h]) - scoreOf(players[a.h])) : [], pos = city.findIndex(x => x.h === ME) + 1;
+  return `<h2>${html(showH(ME))} ${offTag(o)}</h2>
+    <div style="display:flex;gap:12px;align-items:center">${lvImg(lv)}<div><b style="font-family:var(--display);font-size:22px;font-weight:400">Nv ${lv} · ${html(L.name)}</b><div class="note" style="margin:2px 0 0">${html(c.name)} - ${c.uf}${c.f === ME ? ' · 👑 FUNDADOR(A)' : ''}${pos ? ` · ${pos}º da cidade` : ''}</div></div></div>
+    <div class="sec"><div class="split"><span>${fmt(sc)} pts</span><span>${N ? `faltam ${fmt(N.min - sc)} para Nv ${N.n} · ${N.name}` : 'nível máximo'}</span></div><div class="meter" style="height:12px;border:2px solid var(--ink)"><i style="width:${prog}%;background:var(--sun)"></i></div></div>
+    <div class="tiles"><div class="tile"><span>Pontos (nível)</span><b>${fmt(sc)}</b></div><div class="tile"><span>Pontos da semana</span><b>${fmt(wkOf(p))}</b></div><div class="tile"><span>Amigos marcados</span><b>${p.tagged.length}</b></div><div class="tile"><span>Recrutou</span><b>${(p.rec || []).length}</b></div></div>
+    <div class="acts" style="margin-top:12px"><button class="act" id="hcConta"><span>👤 Minha conta completa</span><small>apoios, partido, eleição</small></button><button class="act" style="background:#fff" id="hcMap"><span>📍 Ver minha casa no mapa</span><small>${html(c.name)}</small></button></div>`;
+}
+function hubRank() {
+  const sc = HUB.sc, withH = Object.entries(players).filter(([, p]) => p.casas.length);
+  let list = withH, title = 'Brasil', sub = '', extra = '';
+  if (sc === 'city') {
+    const opts = active.slice().sort((a, b) => TOT(cities[b]) - TOT(cities[a])).slice(0, 300);
+    let ci = HUB.ci >= 0 ? HUB.ci : sel >= 0 && TOT(cities[sel]) ? sel : ME && players[ME] && players[ME].casas.length ? players[ME].casas[0] : opts[0];
+    HUB.ci = ci; list = withH.filter(([, p]) => p.casas.includes(ci)); const c = cities[ci];
+    title = c ? `${c.name} - ${c.uf}` : 'Cidade'; sub = c ? `${fmt(TOT(c))} casas na cidade` : '';
+    extra = `<select id="rkCity" style="width:100%;margin-bottom:8px;border:2px solid var(--ink);border-radius:12px;padding:8px;font:800 14px var(--body)">${(opts.includes(ci) ? opts : [ci, ...opts]).map(i => `<option value="${i}" ${i === ci ? 'selected' : ''}>${html(cities[i].name)} - ${cities[i].uf} (${TOT(cities[i])})</option>`).join('')}</select>`;
+  } else if (sc === 'uf') {
+    const ufs = Object.keys(STATE).sort(); let uf = HUB.uf || (sel >= 0 ? cities[sel].uf : ME && players[ME] && homeUf(players[ME])) || 'SP'; HUB.uf = uf;
+    list = withH.filter(([, p]) => homeUf(p) === uf); let n = 0; active.forEach(ci => { if (cities[ci].uf === uf) n += TOT(cities[ci]); });
+    title = STATE[uf]; sub = `${fmt(n)} casas no estado`;
+    extra = `<select id="rkUf" style="width:100%;margin-bottom:8px;border:2px solid var(--ink);border-radius:12px;padding:8px;font:800 14px var(--body)">${ufs.map(u => `<option value="${u}" ${u === uf ? 'selected' : ''}>${STATE[u]} (${u})</option>`).join('')}</select>`;
+  } else { const T = mapTotals(); sub = `${fmt(T.casas)} casas · ${fmt(T.pts)} pontos no total`; }
+  list = list.sort((a, b) => scoreOf(b[1]) - scoreOf(a[1]) || wkOf(b[1]) - wkOf(a[1])).slice(0, 50);
+  return `<div class="seg">${[['city', 'Cidade'], ['uf', 'Estado'], ['br', 'Brasil']].map(([k, n]) => `<button data-sc="${k}" aria-pressed="${k === sc}">${n}</button>`).join('')}</div>${extra}
+    <h2 style="margin-bottom:2px">${html(title)}</h2><p class="note" style="margin:0 0 10px">${sub}</p>
+    <div class="rk">${list.map(([h, p], i) => { const c = cities[p.casas[0]]; return `<button class="r" data-h="${html(h)}"><span class="pos">${i + 1}</span><span class="w"><b>${html(showH(h))} ${sideEmo(p.side)}</b><small>${html(c.name)}, ${c.uf}${c.f === h ? ' · 👑 fundador' : ''}</small></span>${offTag(officeOf(h))}<span class="p">${fmt(scoreOf(p))}</span></button>`; }).join('') || '<p>Ninguém aqui ainda. Comente a cidade no post para ser o primeiro!</p>'}</div>`;
+}
+function hubDados() {
+  const T = mapTotals(); let B = 0, R = 0, N = 0; active.forEach(ci => { B += cities[ci].b; R += cities[ci].r; N += cities[ci].n || 0; });
+  const pc = T.cidades / 5570 * 100, pu = T.ufs / 27 * 100, sided = B + R, pb = sided ? B / sided * 100 : 0;
+  const ring = (v, col, txt, lab) => `<div class="ring"><i style="background:radial-gradient(closest-side,#fff 72%,transparent 73%),conic-gradient(${col} ${v}%,#e7eaf1 0)">${txt}</i>${lab}</div>`;
+  const topC = active.slice().sort((a, b) => TOT(cities[b]) - TOT(cities[a])).slice(0, 5);
+  const byUf = {}; active.forEach(ci => { const u = cities[ci].uf; byUf[u] = (byUf[u] || 0) + TOT(cities[ci]); }); const topU = Object.entries(byUf).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  return `<div class="big1"><small>O MAPA AGORA · DIA ${gameDay()}</small><b>${fmt(T.casas)}</b><span style="font-weight:800;color:var(--muted)">casas no mapa</span>
+    <div class="tiles"><div class="tile"><span>Cidades</span><b>${fmt(T.cidades)}</b></div><div class="tile"><span>Estados</span><b>${T.ufs}/27</b></div><div class="tile"><span>Pontos</span><b>${fmt(T.pts)}</b></div></div></div>
+    <div class="sec"><h3>Placar</h3><div class="rings">${ring(pc, '#ffc93c', Math.round(pc * 10) / 10 + '%', 'das 5.570 cidades já têm casa')}${ring(pu, '#2f6fec', Math.round(pu) + '%', 'dos estados ocupados')}${ring(pb, '#2f6fec', sided ? Math.round(pb) + '%' : '—', sided ? `🔵 direita × 🔴 esquerda (${Math.round(100 - pb)}%)` : 'ninguém escolheu lado')}</div></div>
+    <div class="sec"><h3>Cidades com mais moradores</h3><div class="rk">${topC.map((ci, i) => `<div class="r" style="cursor:default"><span class="pos">${i + 1}</span><span class="w"><b>${html(cities[ci].name)} - ${cities[ci].uf}</b><small>${cities[ci].f ? '👑 fundador ' + html(showH(cities[ci].f)) : ''}</small></span><span class="p">${TOT(cities[ci])}</span></div>`).join('')}</div></div>
+    <div class="sec"><h3>Estados com mais casas</h3><div class="rk">${topU.map(([u, n], i) => `<div class="r" style="cursor:default"><span class="pos">${i + 1}</span><span class="w"><b>${STATE[u]}</b><small>${kings[u] ? '👑 ' + html(showH(kings[u].h)) : ''}</small></span><span class="p">${n}</span></div>`).join('')}</div></div>
+    <div class="acts" style="margin-top:12px"><button class="act" id="hdFree"><span>🟢 Cidades sem dono</span><small>ver no mapa</small></button><button class="act" style="background:#fff" id="hdFold"><span>📌 Placar no mapa</span><small>mostrar/esconder</small></button></div>`;
+}
+function hubComo() {
+  return `<h2>Sua casa cresce com seus pontos</h2>
+    <div class="lvg">${LEVELS.map(L => `<div>${lvImg(L.n)}<b>${L.n}. ${html(L.name)}</b><span>${fmt(L.min)}+ pts</span></div>`).join('')}</div>
+    <p class="note">Os pontos de nível nunca zeram e a casa nunca diminui: 15 níveis, da casinha ao topo do mapa.</p>
+    <h2 style="margin-top:16px">Como ganhar pontos</h2>
+    <ul class="ptl"><li><em>+10</em>ter uma casa (uma vez)</li><li><em>+5</em>comentar em cada post novo</li><li><em>+1</em>comentário extra no mesmo post (até 10)</li>
+      <li><em>+${TAG_PTS}</em>marcar um amigo (até 10 por post)</li><li><em>+5</em>receber apoio: "apoio @você"</li><li><em>+25</em>recrutar: um amigo que você marcou ganha casa</li>
+      <li><em>+15</em>seguir @vouserpresidente (a página confirma)</li><li><em>+30</em>story mostrando sua casa e marcando @vouserpresidente (a página confirma)</li><li><em>+30</em>marcar um negócio cadastrado no jogo nos comentários</li></ul>
+    <h2 style="margin-top:16px">Cargos</h2>
+    <div class="ofl"><div>${offTag('pres')} <b>Presidente</b><br>1 vaga · eleição todo fim de semana · precisa de ${PRES_MIN_PTS}+ pontos</div>
+      <div>${offTag('gov')} <b>Governador(a)</b><br>1 por estado · eleito(a) pelos moradores do estado</div>
+      <div>${offTag('sen')} <b>Senador(a)</b><br>1 por estado</div><div>${offTag('dep')} <b>Deputado(a) federal</b><br>2 por estado</div>
+      <div>${offTag('pref')} <b>Prefeito(a)</b><br>1 por cidade</div><div>${offTag('ver')} <b>Vereador(a)</b><br>até 10 por cidade</div>
+      <div>👑 <b>Fundador(a)</b><br>o primeiro morador da cidade · título permanente</div></div>
+    <p class="note">Candidaturas no sábado das 12h às 19h, votação até domingo 21h. Cada pessoa fica com o cargo mais alto que ganhar.</p>
+    <div class="acts" style="margin-top:12px"><button class="act" id="hcElec"><span>🗳️ Eleição</span><small>candidatos e votos</small></button><button class="act" style="background:#fff" id="hcRules"><span>📖 Regras completas</span><small>abrir</small></button></div>`;
+}
+// atalhos: ranking, ajuda e dados abrem o painel
+$('helpBtn').__old = $('helpBtn').onclick;
+$('helpBtn').onclick = () => openHub('como');
+$('cRank').onclick = () => openHub('rank');
+{ const dd = $('cDados'); if (dd) dd.onclick = () => openHub('dados'); }
+
 ph('D-init');
 requestAnimationFrame(loop);
 })();
