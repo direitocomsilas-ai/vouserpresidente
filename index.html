@@ -3703,7 +3703,7 @@ document.querySelector('#bottom .chips').before(addHouse);
   applyFold(); }
 function openMais() {
   const it = [['🏙️ Cidades', 'todas as cidades com casa', () => $('cCities').click()], ['🏛️ Governo', 'presidente e cargos por estado', () => openGoverno()], ['🗺️ Brasília', 'a capital do Brasil', () => { closeModal(); $('cBsb').click(); }],
-    ['🏠 Níveis', 'de casinha a arranha-céu', () => $('cLevels').click()], ['⭐ Seguir', '@vouserpresidente', () => window.open('https://www.instagram.com/vouserpresidente/', '_blank', 'noopener')], ['❓ Como jogar', 'regras e pontos', () => $('helpBtn').click()], ['🏪 Meu negócio', 'registrar na minha cidade', () => openBiz()]];
+    ['📋 Painel do jogo', 'minha casa, ranking, dados, como jogar', () => openHub('rank')], ['🏠 Níveis', 'de casinha a arranha-céu', () => $('cLevels').click()], ['⭐ Seguir', '@vouserpresidente', () => window.open('https://www.instagram.com/vouserpresidente/', '_blank', 'noopener')], ['❓ Como jogar', 'regras e pontos', () => $('helpBtn').click()], ['🏪 Meu negócio', 'registrar na minha cidade', () => openBiz()]];
   const app = document.getElementById('cApp'); if (app && !app.hidden) it.push(['📲 Instalar app', 'na tela do celular', () => app.click()]);
   openModal(`<h2>Mais</h2><div class="mais">${it.map((x, i) => `<button data-i="${i}">${x[0]}<small>${x[1]}</small></button>`).join('')}</div>`);
   $('mcard').querySelectorAll('[data-i]').forEach(b => b.onclick = () => it[+b.dataset.i][2]());
@@ -3775,9 +3775,9 @@ function mapTotals() {
 @media (max-width:760px){#stats .sb{min-width:56px;padding:1px 8px 2px}#stats .sb b{font-size:16px}#stats .day{font-size:13px;padding:2px 9px}}`; document.head.appendChild(css); }
 const statsEl = document.createElement('div'); statsEl.id = 'stats';
 statsEl.innerHTML = '<span class="day" id="stDay">DIA 1</span><div class="sb" data-t="dados"><b id="stC">0</b><small>CASAS</small></div><div class="sb" data-t="dados"><b id="stI">0</b><small>CIDADES</small></div><div class="sb" data-t="dados"><b id="stU">0/27</b><small>ESTADOS</small></div>';
-document.querySelector('#top .ttl').after(statsEl);
+// placar fica só dentro do painel (o topo do mapa continua como era)
 statsEl.querySelectorAll('.sb').forEach(b => b.onclick = () => openHub('dados'));
-function updateStats() { const T = mapTotals(); $('stDay').textContent = 'DIA ' + gameDay(); $('stC').textContent = fmt(T.casas); $('stI').textContent = fmt(T.cidades); $('stU').textContent = T.ufs + '/27'; }
+function updateStats() { if (!statsEl.isConnected) return; const T = mapTotals(); $('stDay').textContent = 'DIA ' + gameDay(); $('stC').textContent = fmt(T.casas); $('stI').textContent = fmt(T.cidades); $('stU').textContent = T.ufs + '/27'; }
 window.__statsReady = true; updateStats();
 
 let HUB = { tab:'rank', sc:'br', ci:-1, uf:'' };
@@ -3865,9 +3865,6 @@ function hubComo() {
 }
 // atalhos: ranking, ajuda e dados abrem o painel
 $('helpBtn').__old = $('helpBtn').onclick;
-$('helpBtn').onclick = () => openHub('como');
-$('cRank').onclick = () => openHub('rank');
-{ const dd = $('cDados'); if (dd) dd.onclick = () => openHub('dados'); }
 
 ph('D-init');
 requestAnimationFrame(loop);
