@@ -3866,6 +3866,34 @@ function hubComo() {
 // atalhos: ranking, ajuda e dados abrem o painel
 $('helpBtn').__old = $('helpBtn').onclick;
 
+// ---------- Quem está online agora (presença do Supabase Realtime; só o dono vê o número) ----------
+let ONLINE = { n:0, list:[] };
+const onEl = document.createElement('button'); onEl.className = 'chip'; onEl.id = 'onlineBtn'; onEl.style.cssText = 'font-size:15px;padding:5px 14px'; onEl.textContent = '🟢 … online';
+$('adminRow').insertBefore(onEl, $('pubState'));
+function updOnline() { onEl.textContent = `🟢 ${fmt(ONLINE.n)} online agora`; }
+onEl.onclick = () => {
+  const ids = ONLINE.list.filter(x => x.me).map(x => x.me), uniq = [...new Set(ids)];
+  const where = {}; ONLINE.list.forEach(x => { const k = x.ci >= 0 && cities[x.ci] ? cities[x.ci].name + ' - ' + cities[x.ci].uf : 'vendo o mapa'; where[k] = (where[k] || 0) + 1; });
+  openModal(`<h2>🟢 ${fmt(ONLINE.n)} pessoas online agora</h2><p>Contagem ao vivo de quem está com o site aberto neste momento (atualiza sozinha).</p>
+    <div class="tiles"><div class="tile"><span>Online</span><b>${fmt(ONLINE.n)}</b></div><div class="tile"><span>Logados com @</span><b>${uniq.length}</b></div><div class="tile"><span>Sem login</span><b>${fmt(ONLINE.n - ids.length)}</b></div></div>
+    ${uniq.length ? `<div class="sec"><h3>Logados agora</h3><div class="ppl">${uniq.map(h => `<button class="pp go" data-h="${html(h)}">${html(showH(h))}</button>`).join('')}</div></div>` : ''}
+    <div class="sec"><h3>Olhando agora</h3><div class="reqs">${Object.entries(where).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `<div class="req"><span>${html(k)}</span><b>${n}</b></div>`).join('')}</div></div>`);
+  $('mcard').querySelectorAll('[data-h]').forEach(b => b.onclick = () => openProfile(b.dataset.h));
+};
+(function presence() {
+  if (!sb || window.__STATE || !sb.channel) return;
+  let key = ''; try { key = sessionStorage.getItem('vsp_pk') || ''; if (!key) { key = Math.random().toString(36).slice(2, 10); sessionStorage.setItem('vsp_pk', key); } } catch (e) { key = Math.random().toString(36).slice(2, 10); }
+  try {
+    const ch = sb.channel('vsp-online', { config:{ presence:{ key } } });
+    const read = () => { const st = ch.presenceState(), L = Object.values(st).map(a => a[0] || {}); ONLINE = { n:L.length, list:L }; updOnline(); };
+    ch.on('presence', { event:'sync' }, read);
+    let lastSel = -2;
+    const track = () => ch.track({ me:ME || '', ci:sel, t:Date.now() });
+    ch.subscribe(st => { if (st === 'SUBSCRIBED') track(); });
+    setInterval(() => { if (sel !== lastSel) { lastSel = sel; track(); } }, 15000);
+  } catch (e) {}
+})();
+
 ph('D-init');
 requestAnimationFrame(loop);
 })();
