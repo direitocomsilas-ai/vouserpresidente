@@ -1097,6 +1097,15 @@ function lmGeo(lm) { const c = cities[lm.ci], cx = c.gx ?? c.x, cz = c.gz ?? c.z
   lm.ox = lm.g.position.x - cx; lm.oz = lm.g.position.z - cz;
   lm.bx = (bx.min.x + bx.max.x) / 2 - cx; lm.bz = (bx.min.z + bx.max.z) / 2 - cz; lm.hx = (bx.max.x - bx.min.x) / 2; lm.hz = (bx.max.z - bx.min.z) / 2; }
 LANDMARKS.forEach(lmGeo);
+// cidade do litoral: o bairro inteiro (e o ponto turístico) fica em terra, atrás da faixa de areia
+function coastClamp(items) {
+  const CO = window.__coast; if (!CO) return false; let moved = false;
+  items.forEach(a => { const b = CO.get(a.c.i); if (!b) return;
+    const reach = (a.ox * b.dx + a.oz * b.dz) + Math.max(a.hx, a.hz) * (Math.abs(b.dx) + Math.abs(b.dz));
+    const sd = (b.x0 - a.c.x) * b.dx + (b.z0 - a.c.z) * b.dz, need = reach + .6;
+    if (sd < need - .001) { const m = need - sd; a.c.x -= b.dx * m; a.c.z -= b.dz * m; moved = true; } });
+  return moved;
+}
 function spreadCities() {
   cities.forEach(c => { if (c.gx === undefined) { c.gx = c.x; c.gz = c.z; } c.x = c.gx; c.z = c.gz; });
   const GAP = CELL * .9, items = [], W = new Map();
@@ -1110,7 +1119,7 @@ function spreadCities() {
       if (Math.abs(lm.bx) >= Math.abs(lm.bz)) { const need = ch + lm.hx + GAP; if (Math.abs(lm.bx) < need) lm.dx = Math.sign(lm.bx) * need - lm.bx; }
       else { const need = ch + lm.hz + GAP; if (Math.abs(lm.bz) < need) lm.dz = Math.sign(lm.bz) * need - lm.bz; } }
     items.push({ c, ox:lm.bx + lm.dx, oz:lm.bz + lm.dz, hx:lm.hx + GAP / 2, hz:lm.hz + GAP / 2 }); });
-  if (items.length > 1) {
+  if (items.length >= 1) {
     const G = 3, key = (x, z) => Math.floor(x / G) + ',' + Math.floor(z / G);
     for (let it = 0; it < 80; it++) {
       const grid = new Map(); let moved = false;
@@ -1128,9 +1137,11 @@ function spreadCities() {
         else { const s = (dz >= 0 ? 1 : -1) * (pz + .001); a.c.z -= s * fa; b.c.z += s * fb; }
         moved = true;
       } });
+      if (coastClamp(items)) moved = true;
       if (!moved) break;
     }
   }
+  coastClamp(items);
   LANDMARKS.forEach(lm => { const c = cities[lm.ci], nx = c.x + lm.ox + lm.dx, nz = c.z + lm.oz + lm.dz;
     if (lm.site) { lm.site.position.x += nx - lm.g.position.x; lm.site.position.z += nz - lm.g.position.z; }
     lm.g.position.x = nx; lm.g.position.z = nz; });
@@ -3903,16 +3914,16 @@ const BEACHES = BEACH_PTS.map(([ci, lon, lat, ang]) => {
 });
 const beachIdx = new Map(BEACHES.map((b, i) => [b.ci, i]));
 const BEACH = (() => {
-  const N = BEACHES.length, PALMS = 9, UMB = 5;
-  const sandM = new THREE.MeshLambertMaterial({ color:'#f7cf6e' }), wetM = new THREE.MeshLambertMaterial({ color:'#d8b25e' });
+  const N = BEACHES.length, PALMS = 9, UMB = 4;
+  const sandM = new THREE.MeshLambertMaterial({ color:'#ead7a8' }), wetM = new THREE.MeshLambertMaterial({ color:'#cbb487' }), shoalM = new THREE.MeshBasicMaterial({ color:'#57c7c2', transparent:true, opacity:.38, depthWrite:false });
   const foamM = new THREE.MeshBasicMaterial({ color:'#ffffff', transparent:true, opacity:.7, depthWrite:false });
   const unit = new THREE.BoxGeometry(1, 1, 1);
-  const sand = new THREE.InstancedMesh(unit, sandM, N), wet = new THREE.InstancedMesh(unit, wetM, N), foam = new THREE.InstancedMesh(unit, foamM, N * 2);
+  const sand = new THREE.InstancedMesh(unit, sandM, N), wet = new THREE.InstancedMesh(unit, wetM, N), foam = new THREE.InstancedMesh(unit, foamM, N * 2), shoal = new THREE.InstancedMesh(unit, shoalM, N);
   // coqueiro: tronco curvo + folhas caídas + cocos (altura 1)
   const pp = [];
-  for (let k = 0; k < 5; k++) pp.push(P(new THREE.CylinderGeometry(.045 - k * .005, .055 - k * .005, .21, 7), k % 2 ? '#8b6a3e' : '#7a5b33', k * k * .012, k * .2 + .105, 0));
+  for (let k = 0; k < 5; k++) pp.push(P(new THREE.CylinderGeometry(.045 - k * .005, .055 - k * .005, .21, 7), k % 2 ? '#8a6d4b' : '#7b5f40', k * k * .012, k * .2 + .105, 0));
   const top = [.19, 1.02, 0];
-  for (let k = 0; k < 8; k++) { const g = new THREE.BoxGeometry(.5, .022, .12); g.translate(.25, 0, 0); pp.push(P(g, k % 2 ? '#3fa34d' : '#2f8a3c', top[0], top[1], top[2], { rz:-.5 - (k % 3) * .12, ry:k / 8 * Math.PI * 2 })); }
+  for (let k = 0; k < 8; k++) { const g = new THREE.BoxGeometry(.5, .022, .12); g.translate(.25, 0, 0); pp.push(P(g, k % 2 ? '#4f8f3a' : '#3d7a2e', top[0], top[1], top[2], { rz:-.5 - (k % 3) * .12, ry:k / 8 * Math.PI * 2 })); }
   for (let k = 0; k < 3; k++) pp.push(P(new THREE.SphereGeometry(.045, 7, 6), '#6b4a2a', top[0] + Math.cos(k * 2.1) * .05, top[1] - .06, Math.sin(k * 2.1) * .05));
   const palmG = merge(pp);
   const palmM = new THREE.MeshToonMaterial({ vertexColors:true, gradientMap:grad });
@@ -3931,28 +3942,27 @@ const BEACH = (() => {
   const poles = new THREE.InstancedMesh(poleG, new THREE.MeshLambertMaterial({ color:'#f4f4f4' }), N * UMB);
   const caps = new THREE.InstancedMesh(capG, new THREE.MeshToonMaterial({ color:'#ffffff', gradientMap:grad }), N * UMB);
   caps.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * UMB * 3).fill(1), 3);
-  const UC = ['#e5484d', '#2f6fec', '#ffc93c', '#3ad17a', '#ff8a3d', '#d6249f'].map(c => new THREE.Color(c));
+  const UC = ['#f4f1ea', '#e0675a', '#4a9fd4', '#f0c04e', '#f4f1ea', '#3fae8a'].map(c => new THREE.Color(c));
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
   const h = (i, k) => { const s = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return s - Math.floor(s); };
   const PALM_POS = [];
   function layout() {
   PALM_POS.length = 0;
   BEACHES.forEach((b, i) => {
-    const edge = TOT(b.c) ? ((b.c.rad || 2) + 1.4) * CELL + .2 : 0, dd = Math.max(b.cd, edge);
-    b.x = b.c.x + b.dx * dd; b.z = b.c.z + b.dz * dd;
+    b.x = b.x0; b.z = b.z0;
     q.setFromAxisAngle(Y, b.rot);
-    const at = (along, inl, y = TOP + .004) => ps.set(b.x + b.tx * along - b.dx * inl, y + .012, b.z + b.tz * along - b.dz * inl);
-    m4.compose(at(0, .2, TOP + .012), q, sc.set(1.7, .022, .44)); sand.setMatrixAt(i, m4);
-    m4.compose(at(0, -.01, TOP + .01), q, sc.set(1.7, .018, .07)); wet.setMatrixAt(i, m4);
-    m4.compose(at(0, -.06, TOP + .006), q, sc.set(1.6, .006, .03)); foam.setMatrixAt(i * 2, m4);
-    m4.compose(at(.1, -.12, TOP + .006), q, sc.set(1.3, .006, .022)); foam.setMatrixAt(i * 2 + 1, m4);
+    const at = (along, inl, y = TOP + .004) => ps.set(b.x + b.tx * along - b.dx * inl, y, b.z + b.tz * along - b.dz * inl);
+    m4.compose(at(0, .24, TOP + .004), q, sc.set(1.9, .012, .44)); sand.setMatrixAt(i, m4);
+    m4.compose(at(0, .03, TOP + .003), q, sc.set(1.9, .01, .06)); wet.setMatrixAt(i, m4);
+    m4.compose(at(0, .012, TOP + .006), q, sc.set(1.88, .004, .018)); foam.setMatrixAt(i * 2, m4);
+    m4.compose(at(.1, .05, TOP + .006), q, sc.set(1.4, .004, .01)); foam.setMatrixAt(i * 2 + 1, m4);
     for (let k = 0; k < PALMS; k++) {
-      const along = (k / (PALMS - 1) - .5) * 1.55 + (h(i, k) - .5) * .12, inl = .32 + h(i, k + 9) * .08, s = .13 + h(i, k + 5) * .05;
+      const along = (k / (PALMS - 1) - .5) * 1.7 + (h(i, k) - .5) * .14, inl = .36 + h(i, k + 9) * .08, s = .12 + h(i, k + 5) * .05;
       const p = at(along, inl, TOP + .01).clone(); PALM_POS.push([i, p]);
       m4.compose(p, new THREE.Quaternion().setFromAxisAngle(Y, h(i, k + 3) * 6.28), sc.set(s, s, s)); palms.setMatrixAt(i * PALMS + k, m4);
     }
     for (let k = 0; k < UMB; k++) {
-      const along = ((k + .5) / UMB - .5) * 1.2 + (h(i, k + 20) - .5) * .1, inl = .1 + h(i, k + 30) * .1, s = .11;
+      const along = ((k + .5) / UMB - .5) * 1.3 + (h(i, k + 20) - .5) * .12, inl = .14 + h(i, k + 30) * .1, s = .08;
       m4.compose(at(along, inl, TOP + .01), q, sc.set(s, s, s)); poles.setMatrixAt(i * UMB + k, m4); caps.setMatrixAt(i * UMB + k, m4);
       caps.setColorAt(i * UMB + k, UC[(i + k) % UC.length]);
     }
@@ -4019,6 +4029,7 @@ function openBeach(i) {
 }
 function openBeaches() { const k = BEACHES.map((x, j) => [j, TOT(x.c)]).sort((a, b) => b[1] - a[1])[0]; openBeach(k ? k[0] : 0); }
 window.__beachTick = beachTick; window.__beachLayout = BEACH.layout;
+window.__coast = new Map(BEACHES.map(b => [b.ci, b])); if (active.length) refresh();
 
 ph('D-init');
 requestAnimationFrame(loop);
