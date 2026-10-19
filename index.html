@@ -3751,7 +3751,7 @@ log(active.length ? 'Pesquise sua cidade ou seu @' : 'O mapa ainda está vazio: 
 const OFF_TAG = { pres:['PRES', '#9b5cf6'], gov:['GOV', '#e5484d'], sen:['SEN', '#2f6fec'], dep:['DEP', '#f59e0b'], pref:['PREF', '#16a34a'], ver:['VER', '#0d9488'] };
 function officeOf(h) { for (const o of OFF_ORDER) for (const race of Object.keys(TITLES || {})) if (race.split(':')[0] === o && elected(race).some(x => x.h === h)) return o; return null; }
 const offTag = o => o ? `<span class="otag" style="background:${OFF_TAG[o][1]}">${OFF_TAG[o][0]}</span>` : '';
-function gameDay() { const v = Object.values(players).map(p => p.since).filter(x => x > 1.7e12); const t0 = v.length ? Math.min(...v) : Date.now(); const d0 = new Date(t0 - 3 * 3600e3), n = brNow(); return Math.max(1, Math.round((Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()) - Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate())) / 864e5) + 1); }
+function gameDay() { return Math.max(1, Math.floor((Date.now() - Date.UTC(2026, 9, 16, 3)) / 864e5) + 1); } // dia 1 = 16/10/2026 (Brasília)
 function mapTotals() {
   let casas = 0; const ufs = new Set(); active.forEach(ci => { casas += TOT(cities[ci]); ufs.add(cities[ci].uf); });
   let pts = 0; Object.values(players).forEach(p => pts += p.pts || 0);
@@ -4030,6 +4030,20 @@ function openBeach(i) {
 function openBeaches() { const k = BEACHES.map((x, j) => [j, TOT(x.c)]).sort((a, b) => b[1] - a[1])[0]; openBeach(k ? k[0] : 0); }
 window.__beachTick = beachTick; window.__beachLayout = BEACH.layout;
 window.__coast = new Map(BEACHES.map(b => [b.ci, b])); if (active.length) refresh();
+
+// ======================= CONTADOR DE DIAS DO JOGO =======================
+// Dia 1 = 16/10/2026 (horário de Brasília). Vira o dia à meia-noite de Brasília.
+const dayCss = document.createElement('style');
+dayCss.textContent = `#gameDay{pointer-events:auto;display:inline-flex;align-items:center;gap:6px;background:var(--paper);border:3px solid var(--ink);border-radius:99px;padding:3px 14px 3px 10px;box-shadow:0 3px 0 var(--ink);font-family:var(--display);font-size:16px;line-height:1.2;color:var(--ink);cursor:pointer;white-space:nowrap}
+#gameDay b{font-weight:400;color:var(--ink);background:var(--sun);border:2px solid var(--ink);border-radius:99px;padding:0 9px;font-size:15px}
+@media (max-width:760px){#gameDay{font-size:14px;padding:2px 12px 2px 8px;border-width:2.5px}#gameDay b{font-size:13px}}`;
+document.head.appendChild(dayCss);
+const dayEl = document.createElement('button'); dayEl.id = 'gameDay'; dayEl.setAttribute('aria-label', 'Dia do jogo');
+$('count').before(dayEl);
+function updDay() { const d = gameDay(); dayEl.innerHTML = `📅 <b>DIA ${d}</b> do jogo`; }
+dayEl.onclick = () => toast(`📅 Hoje é o dia ${gameDay()} do Vou Ser Presidente! O jogo começou em 16/10/2026.`);
+updDay(); setInterval(updDay, 60000);
+window.__gameDay = gameDay;
 
 ph('D-init');
 requestAnimationFrame(loop);
